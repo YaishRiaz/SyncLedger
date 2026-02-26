@@ -7,6 +7,8 @@ class Accounts extends Table {
   TextColumn get type => text()(); // bank, broker
   TextColumn get last4 => text().nullable()();
   BoolColumn get active => boolean().withDefault(const Constant(true))();
+  RealColumn get balance => real().nullable()();
+  IntColumn get balanceUpdatedAtMs => integer().nullable()();
 }
 
 class Profiles extends Table {

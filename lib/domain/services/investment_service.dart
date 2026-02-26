@@ -144,12 +144,17 @@ class InvestmentService {
       positions[e.symbol] = (positions[e.symbol] ?? 0) + delta;
     }
 
+    // Clear existing positions for this profile so upsert works as an absolute set
+    await _db.deletePositionsForProfile(profileId);
+
     for (final entry in positions.entries) {
-      await _db.upsertPosition(  // ← use absolute setter, not delta
-        profileId: profileId,
-        symbol: entry.key,
-        qty: entry.value,               // ← the calculated total
-      );
+      if (entry.value > 0) {
+        await _db.upsertPosition(
+          profileId: profileId,
+          symbol: entry.key,
+          qtyDelta: entry.value,
+        );
+      }
     }
   }
 }

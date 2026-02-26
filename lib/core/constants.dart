@@ -24,4 +24,5 @@ abstract final class PrefKeys {
   static const familyGroupId = 'family_group_id';
   static const syncServerUrl = 'sync_server_url';
   static const lastSyncSeq = 'last_sync_seq';
+  static const profiles = 'profiles';
 }

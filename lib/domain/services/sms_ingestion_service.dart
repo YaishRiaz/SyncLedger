@@ -1,5 +1,5 @@
 import 'package:sync_ledger/data/db/app_database.dart';
-import 'package:sync_ledger/domain/models/sms_message.dart';
+import 'package:sync_ledger/domain/models/sms_message.dart' as raw_sms;
 import 'package:sync_ledger/domain/models/enums.dart';
 import 'package:sync_ledger/domain/parsers/parser_registry.dart';
 import 'package:sync_ledger/domain/services/auto_tagger.dart';
@@ -17,7 +17,7 @@ class SmsIngestionService {
   final bool debugMode;
 
   /// Returns true if parsed successfully, false if needs review, null if duplicate.
-  Future<bool?> ingestSms(SmsMessage sms, {required String profileId}) async {
+  Future<bool?> ingestSms(raw_sms.SmsMessage sms, {required String profileId}) async {
     final hash = sms.hash;
 
     // Check for duplicates within ±2 minute window to handle re-broadcasts
@@ -66,6 +66,18 @@ class SmsIngestionService {
         confidence: txn.confidence,
         scope: DataScope.personal.name,
       );
+
+      // Persist the latest account balance from the SMS
+      if (txn.balance != null &&
+          txn.accountHint != null &&
+          txn.sourceSmsSender != null) {
+        await db.upsertAccount(
+          institution: txn.sourceSmsSender!,
+          last4: txn.accountHint!,
+          balance: txn.balance!,
+          updatedAtMs: txn.occurredAtMs,
+        );
+      }
     }
 
     for (final ev in result.investmentEvents) {

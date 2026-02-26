@@ -27,12 +27,9 @@ class BiometricService {
     try {
       return await _auth.authenticate(
         localizedReason: reason,
-        options: const AuthenticationOptions(
-          stickyAuth: true,
-          biometricOnly: false,
-          useErrorDialogs: true,
-          sensitiveTransaction: false,
-        ),
+        biometricOnly: false,
+        sensitiveTransaction: false,
+        persistAcrossBackgrounding: true,
       );
     } catch (e) {
       return false;

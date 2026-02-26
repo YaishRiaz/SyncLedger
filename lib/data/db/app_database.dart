@@ -26,7 +26,19 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration {
+    return MigrationStrategy(
+      onUpgrade: (migrator, from, to) async {
+        if (from < 2) {
+          await migrator.addColumn(accounts, accounts.balance);
+          await migrator.addColumn(accounts, accounts.balanceUpdatedAtMs);
+        }
+      },
+    );
+  }
 
   // --- SMS ---
   Future<bool> smsExists(String hash) async {
@@ -333,6 +345,63 @@ class AppDatabase extends _$AppDatabase {
         payloadMac: change.payloadMac,
       );
     }
+  }
+
+  // --- Accounts ---
+  Future<List<Account>> getAllAccounts() async {
+    return select(accounts).get();
+  }
+
+  Future<void> upsertAccount({
+    required String institution,
+    required String last4,
+    required double balance,
+    required int updatedAtMs,
+  }) async {
+    final existing = await (select(accounts)
+          ..where((t) =>
+              t.institution.equals(institution) & t.last4.equals(last4)))
+        .getSingleOrNull();
+
+    if (existing != null) {
+      // Only update if this balance is newer
+      if (existing.balanceUpdatedAtMs == null ||
+          updatedAtMs >= existing.balanceUpdatedAtMs!) {
+        await (update(accounts)..where((t) => t.id.equals(existing.id))).write(
+          AccountsCompanion(
+            balance: Value(balance),
+            balanceUpdatedAtMs: Value(updatedAtMs),
+          ),
+        );
+      }
+    } else {
+      await into(accounts).insert(AccountsCompanion.insert(
+        name: '$institution …$last4',
+        institution: institution,
+        type: 'bank',
+        last4: Value(last4),
+        balance: Value(balance),
+        balanceUpdatedAtMs: Value(updatedAtMs),
+      ));
+    }
+  }
+
+  // --- Delete positions for a specific profile (used by recalculatePositions) ---
+  Future<void> deletePositionsForProfile(String profileId) async {
+    await (delete(positions)..where((t) => t.profileId.equals(profileId))).go();
+  }
+
+  // --- Delete All Data ---
+  Future<void> deleteAllData() async {
+    await delete(smsMessages).go();
+    await delete(transactions).go();
+    await delete(transferLinks).go();
+    await delete(transferGroups).go();
+    await delete(investmentEvents).go();
+    await delete(positions).go();
+    await delete(changes).go();
+    await delete(autoTagRules).go();
+    await delete(accounts).go();
   }
 
   // --- Auto-tag rules ---

@@ -8,6 +8,7 @@ class CdsParser implements SmsParser {
   // "CDS-Alerts ... PURCHASES APLA 270 TKYO 2195 ... SALES RCL 12595"
   // "CDS-Alerts 24-DEC-25 DEPOSITS ... BFL 6950"
   // "CDS-Alerts 24-DEC-25 WITHDRAWALS ... BFL 1390"
+  // "21-OCT-24 CONVERSIONS  NBS XXXXXXX52 LI 0 JKH-R-0000 -12 JKH 12"
 
   static final _datePattern = RegExp(
     r'(\d{1,2})-(\w{3})-(\d{2})',
@@ -15,28 +16,40 @@ class CdsParser implements SmsParser {
   );
 
   static final _purchasesSection = RegExp(
-    r'PURCHASES\s+(.+?)(?=SALES|DEPOSITS|WITHDRAWALS|$)',
+    r'PURCHASES\s+(.+?)(?=SALES|DEPOSITS|WITHDRAWALS|CONVERSIONS|$)',
     caseSensitive: false,
   );
 
   static final _salesSection = RegExp(
-    r'SALES\s+(.+?)(?=PURCHASES|DEPOSITS|WITHDRAWALS|$)',
+    r'SALES\s+(.+?)(?=PURCHASES|DEPOSITS|WITHDRAWALS|CONVERSIONS|$)',
     caseSensitive: false,
   );
 
   static final _depositsSection = RegExp(
-    r'DEPOSITS\s+(.+?)(?=PURCHASES|SALES|WITHDRAWALS|$)',
+    r'DEPOSITS\s+(.+?)(?=PURCHASES|SALES|WITHDRAWALS|CONVERSIONS|$)',
     caseSensitive: false,
   );
 
   static final _withdrawalsSection = RegExp(
-    r'WITHDRAWALS\s+(.+?)(?=PURCHASES|SALES|DEPOSITS|$)',
+    r'WITHDRAWALS\s+(.+?)(?=PURCHASES|SALES|DEPOSITS|CONVERSIONS|$)',
     caseSensitive: false,
   );
 
-  // Matches pairs of SYMBOL QTY (e.g., "BFL 180", "APLA 270")
+  static final _conversionsSection = RegExp(
+    r'CONVERSIONS\s+(.+?)(?=PURCHASES|SALES|DEPOSITS|WITHDRAWALS|$)',
+    caseSensitive: false,
+  );
+
+  // Standard symbol-qty pairs (positive qty only, 2-6 char symbols)
   static final _symbolQtyPattern = RegExp(
     r'([A-Z]{2,6})\s+(\d+)',
+    caseSensitive: false,
+  );
+
+  // Conversion symbol-qty pairs: allows hyphens in symbols (e.g. JKH-R-0000)
+  // and signed quantities (e.g. -12 to remove shares, +12 to add shares)
+  static final _conversionSymbolQtyPattern = RegExp(
+    r'([A-Z][A-Z0-9\-]{1,10})\s+(-?\d+)',
     caseSensitive: false,
   );
 
@@ -111,6 +124,16 @@ class CdsParser implements SmsParser {
       );
     }
 
+    // Parse CONVERSIONS (share splits / rights conversions)
+    // Negative qty → shares removed (withdrawal); positive qty → shares added (deposit)
+    // e.g. "JKH-R-0000 -12 JKH 12" means: remove 12 rights, add 12 ordinary shares
+    final conversionMatch = _conversionsSection.firstMatch(normalized);
+    if (conversionMatch != null) {
+      events.addAll(
+        _extractConversionEvents(conversionMatch.group(1)!, occurredAtMs),
+      );
+    }
+
     return ParseResult(investmentEvents: events);
   }
 
@@ -129,7 +152,38 @@ class CdsParser implements SmsParser {
           eventType: eventType,
           symbol: symbol,
           qty: qty,
-        ),);
+        ));
+      }
+    }
+    return events;
+  }
+
+  List<ParsedInvestmentEvent> _extractConversionEvents(
+    String section,
+    int occurredAtMs,
+  ) {
+    final events = <ParsedInvestmentEvent>[];
+    for (final match in _conversionSymbolQtyPattern.allMatches(section)) {
+      final symbol = match.group(1)!.toUpperCase();
+      final qty = int.tryParse(match.group(2)!) ?? 0;
+      if (qty == 0) continue;
+
+      if (qty < 0) {
+        // Negative: old shares removed (treated as withdrawal)
+        events.add(ParsedInvestmentEvent(
+          occurredAtMs: occurredAtMs,
+          eventType: InvestmentEventType.withdrawal,
+          symbol: symbol,
+          qty: qty.abs(),
+        ));
+      } else {
+        // Positive: new shares received (treated as deposit)
+        events.add(ParsedInvestmentEvent(
+          occurredAtMs: occurredAtMs,
+          eventType: InvestmentEventType.deposit,
+          symbol: symbol,
+          qty: qty,
+        ));
       }
     }
     return events;
