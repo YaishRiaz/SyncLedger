@@ -1,0 +1,70 @@
+name: sync_ledger
+description: Privacy-first personal finance & stock tracker via SMS parsing with family sync.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+  flutter: '>=3.16.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  material_color_utilities: ^0.13.0
+
+  # State management (Riverpod runtime only - no codegen)
+  flutter_riverpod: ^2.6.1
+
+  # Database
+  drift: ^2.15.0
+  drift_flutter: ^0.2.4
+  sqlite3: any
+  sqlite3_flutter_libs: ^0.5.24
+  path_provider: ^2.1.2
+  path: ^1.9.0
+
+  # Crypto (E2EE)
+  cryptography: ^2.7.0
+  pointycastle: ^4.0.0
+
+  # QR code (pairing)
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^7.2.0
+
+  # Charts
+  fl_chart: ^1.1.1
+
+  # Networking (sync)
+  dio: ^5.4.1
+
+  # Utils
+  uuid: ^4.3.3
+  intl: ^0.20.2
+  collection: ^1.18.0
+  equatable: ^2.0.5
+  json_annotation: ^4.8.1
+  freezed_annotation: ^2.4.1
+  csv: ^7.1.0
+  share_plus: ^12.0.1
+  local_auth: ^3.0.0
+  shared_preferences: ^2.2.2
+  connectivity_plus: ^7.0.0
+  network_info_plus: ^7.0.0
+  logger: ^2.0.2+1
+  crypto: ^3.0.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+  # Codegen you still need
+  build_runner: ^2.4.13
+  drift_dev: ^2.15.0
+  json_serializable: ^6.7.1
+  freezed: ^2.5.7
+
+  mockito: ^5.4.4
+
+flutter:
+  uses-material-design: true

@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  syncledger-server:
+    build: .
+    container_name: syncledger-server
+    ports:
+      - "8742:8742"
+    volumes:
+      - syncledger-data:/app/data
+    restart: unless-stopped
+    environment:
+      - PORT=8742
+
+volumes:
+  syncledger-data:
