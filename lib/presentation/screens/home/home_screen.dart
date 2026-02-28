@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sync_ledger/presentation/providers/app_providers.dart';
 import 'package:sync_ledger/presentation/screens/personal/personal_dashboard.dart';
 import 'package:sync_ledger/presentation/screens/personal/transactions_screen.dart';
 import 'package:sync_ledger/presentation/screens/stocks/stocks_screen.dart';
@@ -17,7 +18,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _selectedIndex = 0;
 
-  static const _destinations = [
+  static const _baseDestinations = [
     NavigationDestination(
       icon: Icon(Icons.dashboard_outlined),
       selectedIcon: Icon(Icons.dashboard),
@@ -38,43 +39,79 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       selectedIcon: Icon(Icons.analytics),
       label: 'Analytics',
     ),
-    NavigationDestination(
-      icon: Icon(Icons.family_restroom_outlined),
-      selectedIcon: Icon(Icons.family_restroom),
-      label: 'Family',
-    ),
   ];
 
-  static const _screens = [
+  static const _familyDestination = NavigationDestination(
+    icon: Icon(Icons.family_restroom_outlined),
+    selectedIcon: Icon(Icons.family_restroom),
+    label: 'Family',
+  );
+
+  static const _baseScreens = [
     PersonalDashboard(),
     TransactionsScreen(),
     StocksScreen(),
     AnalyticsScreen(),
-    FamilyScreen(),
   ];
+
+  static const _familyScreen = FamilyScreen();
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('SyncLedger'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
+    final familySyncEnabledAsync = ref.watch(familySyncEnabledProvider);
+
+    return familySyncEnabledAsync.when(
+      data: (isFamilyEnabled) {
+        // Build dynamic destination and screen lists based on setting
+        final destinations = [
+          ..._baseDestinations,
+          if (isFamilyEnabled) _familyDestination,
+        ];
+
+        final screens = [
+          ..._baseScreens,
+          if (isFamilyEnabled) _familyScreen,
+        ];
+
+        // Adjust selected index if family is disabled and we were on it
+        final currentIndex = _selectedIndex;
+        if (!isFamilyEnabled && currentIndex >= _baseDestinations.length) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            setState(() => _selectedIndex = 0);
+          });
+        }
+
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('SyncLedger'),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.settings_outlined),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                ),
+              ),
+            ],
           ),
-        ],
+          body: IndexedStack(
+            index: currentIndex,
+            children: screens,
+          ),
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: currentIndex,
+            onDestinationSelected: (i) =>
+                setState(() => _selectedIndex = i),
+            destinations: destinations,
+          ),
+        );
+      },
+      loading: () => Scaffold(
+        appBar: AppBar(title: const Text('SyncLedger')),
+        body: const Center(child: CircularProgressIndicator()),
       ),
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _screens,
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (i) => setState(() => _selectedIndex = i),
-        destinations: _destinations,
+      error: (_, __) => Scaffold(
+        appBar: AppBar(title: const Text('SyncLedger')),
+        body: const Center(child: Text('Error loading settings')),
       ),
     );
   }

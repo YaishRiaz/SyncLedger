@@ -10,6 +10,13 @@ abstract final class AppConstants {
     'HNB',
     'NDB',
     'CDS',
+    'BOC',
+    'HSBC',
+    'NTB',
+    'COMBANK',
+    'COMMERCIAL',
+    'SEYLAN',
+    'SAMPATH',
   };
 }
 
@@ -24,4 +31,5 @@ abstract final class PrefKeys {
   static const syncServerUrl = 'sync_server_url';
   static const lastSyncSeq = 'last_sync_seq';
   static const profiles = 'profiles';
+  static const familySyncEnabled = 'family_sync_enabled';
 }

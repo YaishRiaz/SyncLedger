@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sync_ledger/core/constants.dart';
 import 'package:sync_ledger/presentation/providers/app_providers.dart';
 import 'package:sync_ledger/presentation/providers/export_provider.dart';
 import 'package:sync_ledger/presentation/providers/investment_providers.dart';
 import 'package:sync_ledger/presentation/providers/sms_providers.dart';
 import 'package:sync_ledger/presentation/providers/transaction_providers.dart';
+import 'package:sync_ledger/presentation/providers/sync_providers.dart';
 import 'package:sync_ledger/domain/services/biometric_service.dart';
 import 'package:sync_ledger/presentation/screens/settings/sms_log_screen.dart';
+import 'package:sync_ledger/presentation/screens/family/pair_device_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -138,6 +142,55 @@ class SettingsScreen extends ConsumerWidget {
           const _SectionHeader(title: 'Profiles'),
           _ProfilesSection(),
           const Divider(),
+
+          // ── Family Sync ──────────────────────────────────────────────────
+          Consumer(
+            builder: (context, ref, _) {
+              final familySyncEnabledAsync =
+                  ref.watch(familySyncEnabledProvider);
+              return familySyncEnabledAsync.when(
+                data: (isEnabled) {
+                  return Column(
+                    children: [
+                      SwitchListTile(
+                        title: const Text('Family Sync'),
+                        subtitle: Text(
+                          isEnabled
+                              ? 'Sync transactions across family devices'
+                              : 'Disabled - tap to enable',
+                        ),
+                        value: isEnabled,
+                        onChanged: (value) async {
+                          final prefs =
+                              await SharedPreferences.getInstance();
+                          await prefs.setBool(
+                              PrefKeys.familySyncEnabled, value);
+                          ref.invalidate(familySyncEnabledProvider);
+                        },
+                      ),
+                      if (isEnabled) ...[
+                        const _SectionHeader(title: 'Family Sync Settings'),
+                        _FamilySyncSection(),
+                      ],
+                      const Divider(),
+                    ],
+                  );
+                },
+                loading: () => const SwitchListTile(
+                  title: Text('Family Sync'),
+                  subtitle: Text('Loading...'),
+                  value: false,
+                  onChanged: null,
+                ),
+                error: (_, __) => const SwitchListTile(
+                  title: Text('Family Sync'),
+                  subtitle: Text('Error loading setting'),
+                  value: false,
+                  onChanged: null,
+                ),
+              );
+            },
+          ),
 
           // ── Data ─────────────────────────────────────────────────────────
           const _SectionHeader(title: 'Data'),
@@ -330,6 +383,165 @@ class _ProfileBottomSheetState extends ConsumerState<_ProfileBottomSheet> {
     await ref.read(profileListProvider.notifier).addProfile(name);
     _nameController.clear();
     setState(() => _adding = false);
+  }
+}
+
+// ─── Family Sync Section ─────────────────────────────────────────────────────
+
+class _FamilySyncSection extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final serverUrlAsync = ref.watch(serverUrlProvider);
+
+    return serverUrlAsync.when(
+      data: (serverUrl) {
+        return Column(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.cloud_sync_outlined),
+              title: const Text('Server URL'),
+              subtitle: Text(serverUrl),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _showServerUrlDialog(context, ref, serverUrl),
+            ),
+            ListTile(
+              leading: const Icon(Icons.phonelink_setup_outlined),
+              title: const Text('Pair New Device'),
+              subtitle: const Text('Create or join a family group via QR code'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _navigateToPairDevice(context),
+            ),
+          ],
+        );
+      },
+      loading: () => const Column(
+        children: [
+          ListTile(
+            leading: Icon(Icons.cloud_sync_outlined),
+            title: Text('Server URL'),
+            subtitle: Text('Loading...'),
+          ),
+          ListTile(
+            leading: Icon(Icons.phonelink_setup_outlined),
+            title: Text('Pair New Device'),
+            subtitle: Text('Loading...'),
+          ),
+        ],
+      ),
+      error: (_, __) => const Column(
+        children: [
+          ListTile(
+            leading: Icon(Icons.cloud_sync_outlined),
+            title: Text('Server URL'),
+            subtitle: Text('Error loading'),
+          ),
+          ListTile(
+            leading: Icon(Icons.phonelink_setup_outlined),
+            title: Text('Pair New Device'),
+            subtitle: Text('Error loading'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showServerUrlDialog(
+    BuildContext context,
+    WidgetRef ref,
+    String currentUrl,
+  ) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => _ServerUrlDialog(currentUrl: currentUrl),
+    );
+  }
+
+  void _navigateToPairDevice(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const PairDeviceScreen(),
+      ),
+    );
+  }
+}
+
+class _ServerUrlDialog extends ConsumerStatefulWidget {
+  const _ServerUrlDialog({required this.currentUrl});
+
+  final String currentUrl;
+
+  @override
+  ConsumerState<_ServerUrlDialog> createState() => _ServerUrlDialogState();
+}
+
+class _ServerUrlDialogState extends ConsumerState<_ServerUrlDialog> {
+  late TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.currentUrl);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _save() async {
+    final newUrl = _controller.text.trim();
+    if (newUrl.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter a server URL')),
+        );
+      }
+      return;
+    }
+
+    try {
+      await ref
+          .read(serverUrlNotifierProvider.notifier)
+          .updateServerUrl(newUrl);
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Server URL updated')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Server URL'),
+      content: TextField(
+        controller: _controller,
+        decoration: const InputDecoration(
+          hintText: 'e.g., 192.168.1.100',
+          border: OutlineInputBorder(),
+        ),
+        onSubmitted: (_) => _save(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _save,
+          child: const Text('Save'),
+        ),
+      ],
+    );
   }
 }
 

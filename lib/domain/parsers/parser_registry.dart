@@ -2,6 +2,7 @@ import 'package:sync_ledger/domain/parsers/sms_parser.dart';
 import 'package:sync_ledger/domain/parsers/hnb_parser.dart';
 import 'package:sync_ledger/domain/parsers/ndb_parser.dart';
 import 'package:sync_ledger/domain/parsers/cds_parser.dart';
+import 'package:sync_ledger/domain/parsers/generic_bank_parser.dart';
 
 class ParserRegistry {
   ParserRegistry()
@@ -9,6 +10,7 @@ class ParserRegistry {
           HnbParser(),
           NdbParser(),
           CdsParser(),
+          GenericBankParser(), // Fallback for unknown banks
         ];
 
   final List<SmsParser> _parsers;

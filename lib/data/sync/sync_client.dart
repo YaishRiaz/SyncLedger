@@ -14,13 +14,15 @@ class SyncClient {
 
   Future<String> startPairing(String groupId, String deviceId) async {
     try {
+      AppLogger.d('Starting pairing with server: $serverUrl, groupId: $groupId, deviceId: $deviceId');
       final response = await _dio.post('/pair/start', data: {
         'groupId': groupId,
         'deviceId': deviceId,
       },);
+      AppLogger.d('Pairing start successful, token: ${response.data['pairingToken']}');
       return response.data['pairingToken'] as String;
     } catch (e) {
-      AppLogger.e('Pairing start failed', e);
+      AppLogger.e('Pairing start failed with error: $e');
       rethrow;
     }
   }
@@ -31,14 +33,17 @@ class SyncClient {
     String pairingToken,
   ) async {
     try {
+      AppLogger.d('Finishing pairing with server: $serverUrl, groupId: $groupId, deviceId: $deviceId, token: $pairingToken');
       final response = await _dio.post('/pair/finish', data: {
         'groupId': groupId,
         'deviceId': deviceId,
         'pairingToken': pairingToken,
       },);
-      return response.statusCode == 200;
+      final success = response.statusCode == 200;
+      AppLogger.d('Pairing finish response: statusCode=${response.statusCode}, success=$success');
+      return success;
     } catch (e) {
-      AppLogger.e('Pairing finish failed', e);
+      AppLogger.e('Pairing finish failed with error: $e');
       return false;
     }
   }

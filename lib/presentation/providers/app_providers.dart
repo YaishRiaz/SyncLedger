@@ -27,6 +27,11 @@ final hasOnboardedProvider = FutureProvider<bool>((ref) async {
 
 final debugModeProvider = StateProvider<bool>((ref) => false);
 
+final familySyncEnabledProvider = FutureProvider<bool>((ref) async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getBool(PrefKeys.familySyncEnabled) ?? false; // Default: OFF
+});
+
 // ─── Profiles ───────────────────────────────────────────────────────────────
 
 class ProfileEntry {
