@@ -99,7 +99,7 @@ class SmsImportNotifier extends StateNotifier<SmsImportState> {
       isImporting: false,
       importedCount: state.importedCount + imported,
       parsedCount: state.parsedCount + parsed,
-      statusText: 'Imported $imported messages ($parsed parsed)',
+      statusText: 'Ready to import',
     );
 
     // Refresh all data-dependent providers so UI reflects newly ingested data
@@ -108,6 +108,7 @@ class SmsImportNotifier extends StateNotifier<SmsImportState> {
     _ref.invalidate(accountsProvider);
     _ref.invalidate(uniqueAccountsProvider);
     _ref.invalidate(profileAccountsProvider);
+    _ref.invalidate(familyHoldingsProvider);
     _ref.invalidate(monthlyCashflowProvider);
   }
 
@@ -129,10 +130,13 @@ class SmsImportNotifier extends StateNotifier<SmsImportState> {
       );
       await service.ingestSms(msg, profileId: profileId);
 
-      // Refresh account-related providers when new SMS is ingested
+      // Refresh account and investment providers when new SMS is ingested
       _ref.invalidate(accountsProvider);
       _ref.invalidate(uniqueAccountsProvider);
       _ref.invalidate(profileAccountsProvider);
+      _ref.invalidate(holdingsProvider);
+      _ref.invalidate(familyHoldingsProvider);
+      _ref.invalidate(investmentEventsProvider);
     });
 
     state = state.copyWith(

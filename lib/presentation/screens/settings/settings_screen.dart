@@ -708,6 +708,9 @@ class _ClearDataTile extends ConsumerWidget {
     ref.invalidate(familyHoldingsProvider);
     ref.invalidate(filteredTransactionsProvider);
 
+    // Restart SMS listener to resume receiving new messages
+    await smsNotifier.startListening();
+
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('All data cleared.')),
