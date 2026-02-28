@@ -19,10 +19,11 @@ class HnbParser implements SmsParser {
     caseSensitive: false,
   );
 
-  // Pattern 3: Card/Online debit
+  // Pattern 3: Card/Online debit (supports LKR and foreign currencies like USD)
   // "HNB SMS ALERT:INTERNET, Account:0270***4971,Location:UBER, LK,Amount(Approx.):279.00 LKR,Av.Bal:1848.91"
+  // "HNB SMS ALERT:INTERNET, Account:0270***4971,Location:NETFLIX, US,Amount(Approx.):15.99 USD,Av.Bal:1848.91"
   static final _debitAlertPattern = RegExp(
-    r'HNB\s+SMS\s+ALERT[:\s]*(\w+),?\s*Account[:\s]*(\S+),?\s*Location[:\s]*(.+?),?\s*Amount\s*\(?Approx\.?\)?[:\s]*([\d,]+\.?\d*)\s*LKR,?\s*Av\.?\s*Bal[:\s]*([\d,]+\.?\d*)',
+    r'HNB\s+SMS\s+ALERT[:\s]*(\w+),?\s*Account[:\s]*(\S+),?\s*Location[:\s]*(.+?),?\s*Amount\s*\(?Approx\.?\)?[:\s]*([\d,]+\.?\d*)\s*(LKR|USD|EUR|GBP|SGD|AUD|CAD|JPY|AED|CHF),?\s*Av\.?\s*Bal[:\s]*([\d,]+\.?\d*)',
     caseSensitive: false,
   );
 
@@ -183,7 +184,8 @@ class HnbParser implements SmsParser {
     final account = match.group(2);
     final location = match.group(3)?.trim();
     final amount = ParseUtils.parseAmount(match.group(4)!);
-    final balance = ParseUtils.parseAmount(match.group(5)!);
+    final currency = (match.group(5) ?? 'LKR').toUpperCase();
+    final balance = ParseUtils.parseAmount(match.group(6)!);
 
     final merchant = _cleanMerchant(location);
 
@@ -191,12 +193,14 @@ class HnbParser implements SmsParser {
       transactions: [
         ParsedTransaction(
           amount: amount,
+          currency: currency,
           direction: TransactionDirection.expense,
           occurredAtMs: receivedAtMs,
           type: TransactionType.expense,
           accountHint: ParseUtils.extractLast4(account),
           merchant: merchant,
           reference: channel,
+          // Av.Bal is always the LKR available balance, even for foreign-currency txns
           balance: balance,
           confidence: 0.90,
           sourceSmsSender: 'HNB',

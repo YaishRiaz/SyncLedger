@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sync_ledger/data/sms/sms_plugin.dart';
 import 'package:sync_ledger/domain/services/sms_ingestion_service.dart';
 import 'package:sync_ledger/presentation/providers/app_providers.dart';
+import 'package:sync_ledger/presentation/providers/investment_providers.dart';
+import 'package:sync_ledger/presentation/providers/transaction_providers.dart';
 
 class SmsImportState {
   const SmsImportState({
@@ -53,7 +55,9 @@ class SmsImportNotifier extends StateNotifier<SmsImportState> {
     }
   }
 
-  Future<void> importSms() async {
+  /// [sinceMs] — only import messages received on or after this timestamp.
+  /// Pass null to import all messages in the inbox.
+  Future<void> importSms({int? sinceMs}) async {
     state = state.copyWith(
       isImporting: true,
       statusText: 'Requesting permission...',
@@ -70,7 +74,9 @@ class SmsImportNotifier extends StateNotifier<SmsImportState> {
 
     state = state.copyWith(statusText: 'Reading SMS inbox...');
 
-    final messages = await SmsPlugin.getInboxMessages();
+    final messages = await SmsPlugin.getInboxMessages(
+      sinceTimestampMs: sinceMs,
+    );
     final service = SmsIngestionService(
       db: _ref.read(databaseProvider),
       registry: _ref.read(parserRegistryProvider),
@@ -95,6 +101,12 @@ class SmsImportNotifier extends StateNotifier<SmsImportState> {
       parsedCount: state.parsedCount + parsed,
       statusText: 'Imported $imported messages ($parsed parsed)',
     );
+
+    // Refresh all data-dependent providers so UI reflects newly ingested data
+    _ref.invalidate(holdingsProvider);
+    _ref.invalidate(investmentEventsProvider);
+    _ref.invalidate(accountsProvider);
+    _ref.invalidate(monthlyCashflowProvider);
   }
 
   Future<void> startListening() async {

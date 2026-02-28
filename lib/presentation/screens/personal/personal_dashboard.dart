@@ -13,55 +13,122 @@ class PersonalDashboard extends ConsumerWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final stats = ref.watch(monthlyCashflowProvider);
+    final smsState = ref.watch(smsImportStateProvider);
 
     return RefreshIndicator(
       onRefresh: () async {
         ref.invalidate(monthlyCashflowProvider);
         ref.invalidate(accountsProvider);
       },
-      child: ListView(
-        padding: const EdgeInsets.all(16),
+      child: Stack(
         children: [
-          _SmsImportCard(),
-          const SizedBox(height: 16),
-          _BankBalanceCard(),
-          const SizedBox(height: 16),
-          stats.when(
-            data: (data) => Column(
-              children: [
-                _StatCard(
-                  title: 'Income This Month',
-                  value: data.income.toCurrencyString(),
-                  icon: Icons.arrow_downward,
-                  color: Colors.green,
+          ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+            children: [
+              _BankBalanceCard(),
+              const SizedBox(height: 16),
+              stats.when(
+                data: (data) => Column(
+                  children: [
+                    _StatCard(
+                      title: 'Income This Month',
+                      value: data.income.toCurrencyString(),
+                      icon: Icons.arrow_downward,
+                      color: Colors.green,
+                    ),
+                    const SizedBox(height: 12),
+                    _StatCard(
+                      title: 'Expenses This Month',
+                      value: data.expense.toCurrencyString(),
+                      icon: Icons.arrow_upward,
+                      color: Colors.red,
+                    ),
+                    const SizedBox(height: 12),
+                    _StatCard(
+                      title: 'Net Cashflow',
+                      value: (data.income - data.expense).toCurrencyString(),
+                      icon: Icons.account_balance_wallet,
+                      color: colorScheme.primary,
+                    ),
+                    const SizedBox(height: 12),
+                    _StatCard(
+                      title: 'Transfers',
+                      value: data.transfers.toCurrencyString(),
+                      icon: Icons.swap_horiz,
+                      color: colorScheme.tertiary,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                _StatCard(
-                  title: 'Expenses This Month',
-                  value: data.expense.toCurrencyString(),
-                  icon: Icons.arrow_upward,
-                  color: Colors.red,
-                ),
-                const SizedBox(height: 12),
-                _StatCard(
-                  title: 'Net Cashflow',
-                  value: (data.income - data.expense).toCurrencyString(),
-                  icon: Icons.account_balance_wallet,
-                  color: colorScheme.primary,
-                ),
-                const SizedBox(height: 12),
-                _StatCard(
-                  title: 'Transfers',
-                  value: data.transfers.toCurrencyString(),
-                  icon: Icons.swap_horiz,
-                  color: colorScheme.tertiary,
-                ),
-              ],
-            ),
-            loading: () =>
-                const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Text('Error: $e'),
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Text('Error: $e'),
+              ),
+            ],
           ),
+          // Compact listener status bar at the bottom
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _SmsStatusBar(smsState: smsState),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Slim status strip shown at the bottom of the dashboard.
+class _SmsStatusBar extends StatelessWidget {
+  const _SmsStatusBar({required this.smsState});
+  final SmsImportState smsState;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    Color dotColor;
+    String label;
+    if (smsState.isImporting) {
+      dotColor = Colors.orange;
+      label = smsState.statusText;
+    } else if (smsState.isListening) {
+      dotColor = Colors.green;
+      label = 'Listening for SMS';
+    } else {
+      dotColor = colorScheme.onSurfaceVariant;
+      label = smsState.statusText;
+    }
+
+    return Container(
+      color: colorScheme.surfaceContainerLow,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: dotColor,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: colorScheme.onSurfaceVariant),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (smsState.isImporting)
+            const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
         ],
       ),
     );
@@ -80,14 +147,12 @@ class _BankBalanceCard extends ConsumerWidget {
       data: (accounts) {
         if (accounts.isEmpty) return const SizedBox.shrink();
 
-        // Derive unique institution names
         final institutions = accounts
             .map((a) => a.institution)
             .toSet()
             .toList()
           ..sort();
 
-        // Compute displayed balance
         final filtered = selectedBank == null
             ? accounts
             : accounts.where((a) => a.institution == selectedBank).toList();
@@ -135,7 +200,6 @@ class _BankBalanceCard extends ConsumerWidget {
                     color: colorScheme.primary,
                   ),
                 ),
-                // Show per-account breakdown when "All Banks" is selected and there are multiple accounts
                 if (selectedBank == null && accounts.length > 1) ...[
                   const SizedBox(height: 8),
                   ...accounts.map((a) => Padding(
@@ -170,59 +234,6 @@ class _BankBalanceCard extends ConsumerWidget {
   }
 }
 
-class _SmsImportCard extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final smsState = ref.watch(smsImportStateProvider);
-    final theme = Theme.of(context);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('SMS Import', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text(
-              smsState.statusText,
-              style: theme.textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                FilledButton.tonal(
-                  onPressed: smsState.isImporting
-                      ? null
-                      : () => ref
-                          .read(smsImportStateProvider.notifier)
-                          .importSms(),
-                  child: Text(
-                    smsState.isImporting ? 'Importing...' : 'Import SMS',
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FilledButton.tonal(
-                  onPressed: smsState.isListening
-                      ? () => ref
-                          .read(smsImportStateProvider.notifier)
-                          .stopListening()
-                      : () => ref
-                          .read(smsImportStateProvider.notifier)
-                          .startListening(),
-                  child: Text(
-                    smsState.isListening ? 'Stop Listener' : 'Start Listener',
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _StatCard extends StatelessWidget {
   const _StatCard({
     required this.title,
@@ -245,7 +256,7 @@ class _StatCard extends StatelessWidget {
         child: Row(
           children: [
             CircleAvatar(
-              backgroundColor: color.withOpacity(0.15),
+              backgroundColor: color.withValues(alpha: 0.15),
               child: Icon(icon, color: color),
             ),
             const SizedBox(width: 16),

@@ -6,6 +6,7 @@ import 'package:sync_ledger/presentation/providers/investment_providers.dart';
 import 'package:sync_ledger/presentation/providers/sms_providers.dart';
 import 'package:sync_ledger/presentation/providers/transaction_providers.dart';
 import 'package:sync_ledger/domain/services/biometric_service.dart';
+import 'package:sync_ledger/presentation/screens/settings/sms_log_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -74,27 +75,62 @@ class SettingsScreen extends ConsumerWidget {
           Consumer(
             builder: (context, ref, _) {
               final smsState = ref.watch(smsImportStateProvider);
-              return SwitchListTile(
-                title: const Text('Auto-Start Listener'),
-                subtitle: Text(
-                  smsState.isListening
-                      ? 'Currently listening for new SMS'
-                      : 'Listener is stopped',
-                ),
-                value: smsState.isListening,
-                onChanged: (v) async {
-                  if (v) {
-                    await ref
-                        .read(smsImportStateProvider.notifier)
-                        .startListening();
-                  } else {
-                    await ref
-                        .read(smsImportStateProvider.notifier)
-                        .stopListening();
-                  }
-                },
+              return Column(
+                children: [
+                  // Import SMS with period picker
+                  ListTile(
+                    leading: Icon(
+                      smsState.isImporting
+                          ? Icons.hourglass_bottom_outlined
+                          : Icons.sms_outlined,
+                    ),
+                    title: const Text('Import SMS'),
+                    subtitle: Text(smsState.statusText),
+                    trailing: smsState.isImporting
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.chevron_right),
+                    onTap: smsState.isImporting
+                        ? null
+                        : () => _showImportPeriodDialog(context, ref),
+                  ),
+                  SwitchListTile(
+                    title: const Text('Auto-Start Listener'),
+                    subtitle: Text(
+                      smsState.isListening
+                          ? 'Currently listening for new SMS'
+                          : 'Listener is stopped',
+                    ),
+                    value: smsState.isListening,
+                    onChanged: (v) async {
+                      if (v) {
+                        await ref
+                            .read(smsImportStateProvider.notifier)
+                            .startListening();
+                      } else {
+                        await ref
+                            .read(smsImportStateProvider.notifier)
+                            .stopListening();
+                      }
+                    },
+                  ),
+                ],
               );
             },
+          ),
+          ListTile(
+            leading: const Icon(Icons.list_alt_outlined),
+            title: const Text('View SMS Log'),
+            subtitle: const Text('See all processed messages and parse status'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const SmsLogScreen(),
+              ),
+            ),
           ),
           const Divider(),
 
@@ -351,6 +387,9 @@ class _ClearDataTile extends ConsumerWidget {
     ref.invalidate(holdingsProvider);
     ref.invalidate(investmentEventsProvider);
     ref.invalidate(monthlyCashflowProvider);
+    ref.invalidate(familyCashflowProvider);
+    ref.invalidate(familyHoldingsProvider);
+    ref.invalidate(filteredTransactionsProvider);
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -358,6 +397,43 @@ class _ClearDataTile extends ConsumerWidget {
       );
     }
   }
+}
+
+// ─── Import Period Dialog ─────────────────────────────────────────────────────
+
+// days=0 means "all time"; null means dismissed (no selection made).
+Future<void> _showImportPeriodDialog(BuildContext context, WidgetRef ref) async {
+  const options = [
+    ('Last 30 days', 30),
+    ('Last 60 days', 60),
+    ('Last 6 months', 182),
+    ('Last 1 year', 365),
+    ('All time', 0),
+  ];
+
+  final days = await showDialog<int>(
+    context: context,
+    builder: (ctx) => SimpleDialog(
+      title: const Text('Import SMS from…'),
+      children: options.map((opt) {
+        return SimpleDialogOption(
+          onPressed: () => Navigator.of(ctx).pop(opt.$2),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Text(opt.$1),
+          ),
+        );
+      }).toList(),
+    ),
+  );
+
+  if (days == null || !context.mounted) return; // dismissed
+
+  final sinceMs = days == 0
+      ? null
+      : DateTime.now().subtract(Duration(days: days)).millisecondsSinceEpoch;
+
+  await ref.read(smsImportStateProvider.notifier).importSms(sinceMs: sinceMs);
 }
 
 // ─── Section Header ───────────────────────────────────────────────────────────

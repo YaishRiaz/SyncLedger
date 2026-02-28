@@ -244,6 +244,13 @@ class AppDatabase extends _$AppDatabase {
         .get();
   }
 
+  Future<List<Position>> getPositionsForProfile(String profileId) async {
+    return (select(positions)
+          ..where((t) =>
+              t.profileId.equals(profileId) & t.qty.isBiggerThanValue(0)))
+        .get();
+  }
+
   Future<List<Position>> getAllFamilyPositions() async {
     final all = await (select(positions)
           ..where((t) => t.qty.isBiggerThanValue(0)))
@@ -352,15 +359,59 @@ class AppDatabase extends _$AppDatabase {
     return select(accounts).get();
   }
 
+  Future<List<SmsMessage>> getAllSmsMessages() async {
+    return (select(smsMessages)
+          ..orderBy([(t) => OrderingTerm.desc(t.receivedAtMs)]))
+        .get();
+  }
+
+  /// Returns IDs of SMS messages whose sender contains [institution] (case-insensitive).
+  /// Used to filter cashflow stats by bank.
+  Future<Set<int>> getSmsIdsByInstitution(String institution) async {
+    final all = await (select(smsMessages)
+          ..where((t) => t.sender.like('%$institution%')))
+        .get();
+    return {for (final s in all) s.id};
+  }
+
+  /// Returns true if a transaction with same profile/direction/amount/merchant already
+  /// exists on the same calendar day. Used to prevent double-importing HNB auth+settle SMS.
+  Future<bool> transactionExistsForDay({
+    required String profileId,
+    required int occurredAtMs,
+    required String direction,
+    required double amount,
+    String? merchant,
+  }) async {
+    final dt = DateTime.fromMillisecondsSinceEpoch(occurredAtMs);
+    final dayStart = DateTime(dt.year, dt.month, dt.day).millisecondsSinceEpoch;
+    final dayEnd = dayStart + 86400000;
+
+    final q = select(transactions)
+      ..where((t) =>
+          t.profileId.equals(profileId) &
+          t.direction.equals(direction) &
+          t.occurredAtMs.isBetweenValues(dayStart, dayEnd) &
+          t.amount.isBetweenValues(amount - 0.01, amount + 0.01));
+
+    if (merchant != null && merchant.isNotEmpty) {
+      q.where((t) => t.merchant.equals(merchant));
+    }
+
+    return (await q.get()).isNotEmpty;
+  }
+
   Future<void> upsertAccount({
     required String institution,
     required String last4,
     required double balance,
     required int updatedAtMs,
   }) async {
+    // Match by institution only — for personal use, one account per institution is assumed.
+    // This avoids duplicates when different SMS formats mask the account number differently
+    // (e.g., HNB credit shows "02702XXXXX71" while debit shows "0270***4971").
     final existing = await (select(accounts)
-          ..where((t) =>
-              t.institution.equals(institution) & t.last4.equals(last4)))
+          ..where((t) => t.institution.equals(institution)))
         .getSingleOrNull();
 
     if (existing != null) {

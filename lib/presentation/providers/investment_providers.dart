@@ -4,9 +4,9 @@ import 'package:sync_ledger/presentation/providers/app_providers.dart';
 
 final holdingsProvider = FutureProvider<List<Position>>((ref) async {
   final db = ref.watch(databaseProvider);
-  final all = await db.getAllPositions();
-  // Filter out positions that have been fully sold
-  return all.where((p) => p.qty > 0).toList();
+  // Filter by active profile so other profiles' holdings don't bleed in
+  final activeId = await ref.watch(activeProfileIdProvider.future);
+  return db.getPositionsForProfile(activeId);
 });
 
 final familyHoldingsProvider = FutureProvider<List<Position>>((ref) async {

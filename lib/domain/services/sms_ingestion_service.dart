@@ -20,10 +20,11 @@ class SmsIngestionService {
   Future<bool?> ingestSms(raw_sms.SmsMessage sms, {required String profileId}) async {
     final hash = sms.hash;
 
-    // Check for duplicates within ±2 minute window to handle re-broadcasts
-    final exists = await db.smsExistsWithinWindow(hash, sms.receivedAtMs);
+    // Exact-hash dedup: same sender+body always means the same message,
+    // regardless of received timestamp (catches re-broadcasts and archive re-imports).
+    final exists = await db.smsExists(hash);
     if (exists) {
-      AppLogger.d('Duplicate SMS detected (within 2min window): ${sms.sender}');
+      AppLogger.d('Duplicate SMS detected (same hash): ${sms.sender}');
       return null;
     }
 
@@ -48,6 +49,22 @@ class SmsIngestionService {
     }
 
     for (final txn in result.transactions) {
+      // Dedup: skip if a transaction with same direction/amount/merchant already exists today.
+      // Handles cases like HNB sending both authorization and settlement SMS for the same spend.
+      final isDuplicate = await db.transactionExistsForDay(
+        profileId: profileId,
+        occurredAtMs: txn.occurredAtMs,
+        direction: txn.direction.name,
+        amount: txn.amount,
+        merchant: txn.merchant,
+      );
+      if (isDuplicate) {
+        AppLogger.d(
+          'Skipping duplicate txn: ${txn.direction.name} ${txn.currency} ${txn.amount} ${txn.merchant ?? ''}',
+        );
+        continue;
+      }
+
       final category = AutoTagger.categorize(txn);
       await db.insertTransaction(
         profileId: profileId,
@@ -67,7 +84,8 @@ class SmsIngestionService {
         scope: DataScope.personal.name,
       );
 
-      // Persist the latest account balance from the SMS
+      // Persist the available LKR balance from the SMS.
+      // Av.Bal is always reported in LKR even for foreign-currency transactions.
       if (txn.balance != null &&
           txn.accountHint != null &&
           txn.sourceSmsSender != null) {

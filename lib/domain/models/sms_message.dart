@@ -15,7 +15,7 @@ class SmsMessage {
   final int receivedAtMs;
 
   String get hash {
-    final input = '$sender|$receivedAtMs|$body';
+    final input = '$sender|$body';
     final bytes = utf8.encode(input);
     return md5.convert(bytes).toString();
   }

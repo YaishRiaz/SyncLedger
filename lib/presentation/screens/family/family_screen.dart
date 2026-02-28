@@ -15,113 +15,151 @@ class FamilyScreen extends ConsumerWidget {
     final syncState = ref.watch(syncStateProvider);
     final familyCashflow = ref.watch(familyCashflowProvider);
     final familyHoldings = ref.watch(familyHoldingsProvider);
+    final selectedDays = ref.watch(familySelectedPeriodDaysProvider);
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Family Sync', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 8),
-                Text(
-                  syncState.isPaired
-                      ? 'Connected to family group'
-                      : 'Not paired yet',
-                  style: theme.textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    if (!syncState.isPaired) ...[
-                      FilledButton.tonal(
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const PairDeviceScreen(),
+    return RefreshIndicator(
+      onRefresh: () async {
+        ref.invalidate(familyCashflowProvider);
+        ref.invalidate(familyHoldingsProvider);
+      },
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // ── Sync card ───────────────────────────────────────────────
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Family Sync', style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Text(
+                    syncState.isPaired
+                        ? 'Connected to family group'
+                        : 'Not paired yet',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      if (!syncState.isPaired) ...[
+                        FilledButton.tonal(
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const PairDeviceScreen(),
+                            ),
+                          ),
+                          child: const Text('Setup Pairing'),
+                        ),
+                      ] else ...[
+                        FilledButton.tonal(
+                          onPressed: syncState.isSyncing
+                              ? null
+                              : () => ref
+                                  .read(syncStateProvider.notifier)
+                                  .syncNow(),
+                          child: Text(
+                            syncState.isSyncing ? 'Syncing...' : 'Sync Now',
                           ),
                         ),
-                        child: const Text('Setup Pairing'),
-                      ),
-                    ] else ...[
-                      FilledButton.tonal(
-                        onPressed: syncState.isSyncing
-                            ? null
-                            : () => ref
-                                .read(syncStateProvider.notifier)
-                                .syncNow(),
-                        child: Text(
-                          syncState.isSyncing ? 'Syncing...' : 'Sync Now',
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      if (syncState.lastSyncAt != null)
-                        Text(
-                          'Last: ${syncState.lastSyncAt!.toShortDateTime()}',
-                          style: theme.textTheme.bodySmall,
-                        ),
+                        const SizedBox(width: 8),
+                        if (syncState.lastSyncAt != null)
+                          Text(
+                            'Last: ${syncState.lastSyncAt!.toShortDateTime()}',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                      ],
                     ],
-                  ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Period selector ──────────────────────────────────────────
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _kPeriods.map((entry) {
+                final selected = entry.$2 == selectedDays;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text(entry.$1),
+                    selected: selected,
+                    onSelected: (_) => ref
+                        .read(familySelectedPeriodDaysProvider.notifier)
+                        .state = entry.$2,
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Family cashflow ──────────────────────────────────────────
+          Text('Family Overview', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 12),
+          familyCashflow.when(
+            data: (data) => Column(
+              children: [
+                _FamilyStatRow(
+                  label: 'Combined Income',
+                  value: data.income.toCurrencyString(),
+                  color: Colors.green,
+                ),
+                _FamilyStatRow(
+                  label: 'Combined Expenses',
+                  value: data.expense.toCurrencyString(),
+                  color: Colors.red,
+                ),
+                _FamilyStatRow(
+                  label: 'Net Savings',
+                  value: (data.income - data.expense).toCurrencyString(),
+                  color: theme.colorScheme.primary,
                 ),
               ],
             ),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Text('Error: $e'),
           ),
-        ),
-        const SizedBox(height: 16),
-        Text('Family Overview', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 12),
-        familyCashflow.when(
-          data: (data) => Column(
-            children: [
-              _FamilyStatRow(
-                label: 'Combined Income',
-                value: data.income.toCurrencyString(),
-                color: Colors.green,
-              ),
-              _FamilyStatRow(
-                label: 'Combined Expenses',
-                value: data.expense.toCurrencyString(),
-                color: Colors.red,
-              ),
-              _FamilyStatRow(
-                label: 'Net Savings',
-                value: (data.income - data.expense).toCurrencyString(),
-                color: theme.colorScheme.primary,
-              ),
-            ],
+          const SizedBox(height: 24),
+
+          // ── Family portfolio ─────────────────────────────────────────
+          Text('Family Portfolio', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 12),
+          familyHoldings.when(
+            data: (list) => list.isEmpty
+                ? const Text('No combined stock holdings')
+                : Column(
+                    children: list
+                        .map(
+                          (h) => ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(h.symbol),
+                            trailing: Text('${h.qty} shares'),
+                          ),
+                        )
+                        .toList(),
+                  ),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Text('Error: $e'),
           ),
-          loading: () =>
-              const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Text('Error: $e'),
-        ),
-        const SizedBox(height: 24),
-        Text('Family Portfolio', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 12),
-        familyHoldings.when(
-          data: (list) => list.isEmpty
-              ? const Text('No combined stock holdings')
-              : Column(
-                  children: list
-                      .map(
-                        (h) => ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(h.symbol),
-                          trailing: Text('${h.qty} shares'),
-                        ),
-                      )
-                      .toList(),
-                ),
-          loading: () =>
-              const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Text('Error: $e'),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
+
+const _kPeriods = [
+  ('30D', 30),
+  ('3M', 90),
+  ('6M', 180),
+  ('1Y', 365),
+];
 
 class _FamilyStatRow extends StatelessWidget {
   const _FamilyStatRow({

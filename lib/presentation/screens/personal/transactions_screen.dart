@@ -75,13 +75,24 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
         ),
         Expanded(
           child: txns.when(
-            data: (list) => list.isEmpty
-                ? const Center(child: Text('No transactions yet'))
-                : ListView.builder(
-                    itemCount: list.length,
-                    itemBuilder: (_, i) =>
-                        _TransactionTile(transaction: list[i]),
-                  ),
+            data: (list) => RefreshIndicator(
+              onRefresh: () async =>
+                  ref.invalidate(filteredTransactionsProvider),
+              child: list.isEmpty
+                  ? const SingleChildScrollView(
+                      physics: AlwaysScrollableScrollPhysics(),
+                      child: SizedBox(
+                        height: 300,
+                        child: Center(child: Text('No transactions yet')),
+                      ),
+                    )
+                  : ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      itemCount: list.length,
+                      itemBuilder: (_, i) =>
+                          _TransactionTile(transaction: list[i]),
+                    ),
+            ),
             loading: () =>
                 const Center(child: CircularProgressIndicator()),
             error: (e, _) => Center(child: Text('Error: $e')),

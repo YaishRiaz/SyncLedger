@@ -4,13 +4,12 @@ abstract final class AppConstants {
   static const transferMatchWindowHours = 48;
   static const transferFeeAmount = 25.0;
   static const syncServerDefaultPort = 8742;
+  static const apkDownloadUrl = 'https://drive.google.com/file/d/1-aeQIHHJFf2evpfmOdnNNTtUq-OVVZnA/view?usp=sharing';
 
   static const knownSmsSenders = {
     'HNB',
-    'NDB ALERT',
-    'NDB+ALERT',
-    'CDS-Alerts',
-    'CDS+Alerts',
+    'NDB',
+    'CDS',
   };
 }
 

@@ -16,17 +16,30 @@ class CashflowData {
 
 final monthlyCashflowProvider = FutureProvider<CashflowData>((ref) async {
   final db = ref.watch(databaseProvider);
+  final selectedBank = ref.watch(selectedBankProvider); // null = All Banks
   final now = DateTime.now();
   final startOfMonth = DateTime(now.year, now.month, 1);
   final startMs = startOfMonth.millisecondsSinceEpoch;
 
   final txns = await db.getTransactionsSince(startMs);
 
+  // When a specific bank is selected, only include transactions sourced from
+  // SMS messages whose sender contains that institution name.
+  Set<int>? allowedSmsIds;
+  if (selectedBank != null) {
+    allowedSmsIds = await db.getSmsIdsByInstitution(selectedBank);
+  }
+
   double income = 0;
   double expense = 0;
   double transfers = 0;
 
   for (final t in txns) {
+    if (t.currency != 'LKR') continue;
+    if (allowedSmsIds != null &&
+        (t.sourceSmsId == null || !allowedSmsIds.contains(t.sourceSmsId))) {
+      continue;
+    }
     if (t.transferGroupId != null) {
       transfers += t.amount;
       continue;
@@ -42,11 +55,15 @@ final monthlyCashflowProvider = FutureProvider<CashflowData>((ref) async {
   return CashflowData(income: income, expense: expense, transfers: transfers);
 });
 
+/// Period in days for the family overview. 30 = last 30 days, etc.
+final familySelectedPeriodDaysProvider = StateProvider<int>((ref) => 30);
+
 final familyCashflowProvider = FutureProvider<CashflowData>((ref) async {
   final db = ref.watch(databaseProvider);
-  final now = DateTime.now();
-  final startOfMonth = DateTime(now.year, now.month, 1);
-  final startMs = startOfMonth.millisecondsSinceEpoch;
+  final days = ref.watch(familySelectedPeriodDaysProvider);
+  final startMs = DateTime.now()
+      .subtract(Duration(days: days))
+      .millisecondsSinceEpoch;
 
   final txns = await db.getFamilyTransactionsSince(startMs);
 
@@ -54,6 +71,7 @@ final familyCashflowProvider = FutureProvider<CashflowData>((ref) async {
   double expense = 0;
 
   for (final t in txns) {
+    if (t.currency != 'LKR') continue;
     if (t.transferGroupId != null) continue;
     switch (t.direction) {
       case 'income':

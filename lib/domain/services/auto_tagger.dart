@@ -3,6 +3,7 @@ import 'package:sync_ledger/domain/models/parsed_transaction.dart';
 
 abstract final class AutoTagger {
   static const _rules = <String, CategoryTag>{
+    'uber eats': CategoryTag.food,
     'uber': CategoryTag.transport,
     'pickme': CategoryTag.transport,
     'grab': CategoryTag.transport,
