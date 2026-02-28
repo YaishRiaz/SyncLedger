@@ -82,6 +82,8 @@ class SmsIngestionService {
         transferGroupId: null,
         confidence: txn.confidence,
         scope: DataScope.personal.name,
+        accountHint: txn.accountHint,
+        institution: txn.sourceSmsSender,
       );
 
       // Persist the available LKR balance from the SMS.
@@ -94,6 +96,7 @@ class SmsIngestionService {
           last4: txn.accountHint!,
           balance: txn.balance!,
           updatedAtMs: txn.occurredAtMs,
+          profileId: profileId,
         );
       }
     }

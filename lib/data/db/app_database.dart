@@ -26,7 +26,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration {
@@ -35,6 +35,9 @@ class AppDatabase extends _$AppDatabase {
         if (from < 2) {
           await migrator.addColumn(accounts, accounts.balance);
           await migrator.addColumn(accounts, accounts.balanceUpdatedAtMs);
+        }
+        if (from < 3) {
+          await migrator.addColumn(accounts, accounts.profileId);
         }
       },
     );
@@ -106,10 +109,22 @@ class AppDatabase extends _$AppDatabase {
     required int? transferGroupId,
     required double confidence,
     required String scope,
+    String? accountHint,
+    String? institution,
   }) async {
+    // If accountHint is provided and accountId is null, try to find/create the account
+    int? finalAccountId = accountId;
+    if (finalAccountId == null && accountHint != null && accountHint.isNotEmpty && institution != null && institution.isNotEmpty) {
+      finalAccountId = await findOrCreateAccount(
+        profileId: profileId,
+        institution: institution,
+        last4: accountHint,
+      );
+    }
+
     await into(transactions).insert(TransactionsCompanion.insert(
       profileId: profileId,
-      accountId: Value(accountId),
+      accountId: Value(finalAccountId),
       occurredAtMs: occurredAtMs,
       direction: direction,
       amount: amount,
@@ -359,6 +374,92 @@ class AppDatabase extends _$AppDatabase {
     return select(accounts).get();
   }
 
+  /// Returns unique accounts by (institution + last4) for UI display.
+  /// When same account is assigned to multiple profiles, returns only one entry.
+  /// Used in settings to show distinct bank accounts regardless of profile assignments.
+  Future<List<Account>> getUniqueAccountsAcrossProfiles() async {
+    final all = await select(accounts).get();
+
+    // Deduplicate by (institution + last4)
+    final seen = <String>{};
+    final unique = <Account>[];
+
+    for (final account in all) {
+      final key = '${account.institution}::${account.last4}';
+      if (!seen.contains(key)) {
+        seen.add(key);
+        unique.add(account);
+      }
+    }
+
+    return unique;
+  }
+
+  /// Finds or creates an account by (profileId + institution + last4) combination.
+  /// Returns the account ID.
+  /// If account exists for (profileId, institution, last4), returns its ID.
+  /// If not, creates a new account and returns its ID.
+  Future<int> findOrCreateAccount({
+    required String? profileId,
+    required String institution,
+    required String? last4,
+  }) async {
+    if (last4 == null || last4.isEmpty) {
+      // Fallback: if no last4, match by (profileId + institution) only
+      final existing = await (select(accounts)
+            ..where((t) =>
+                t.institution.equals(institution) &
+                (profileId == null ? t.profileId.isNull() : t.profileId.equals(profileId))))
+          .getSingleOrNull();
+      if (existing != null) {
+        return existing.id;
+      }
+      // Create new account with institution only
+      return await into(accounts).insert(AccountsCompanion.insert(
+        profileId: profileId != null ? Value(profileId) : const Value.absent(),
+        name: institution,
+        institution: institution,
+        type: 'bank',
+      ));
+    }
+
+    // Match by (profileId + institution + last4)
+    final existing = await (select(accounts)
+          ..where((t) =>
+              t.institution.equals(institution) &
+              t.last4.equals(last4) &
+              (profileId == null ? t.profileId.isNull() : t.profileId.equals(profileId))))
+        .getSingleOrNull();
+
+    if (existing != null) {
+      return existing.id;
+    }
+
+    // Create new account
+    return await into(accounts).insert(AccountsCompanion.insert(
+      profileId: profileId != null ? Value(profileId) : const Value.absent(),
+      name: '$institution ···$last4',
+      institution: institution,
+      type: 'bank',
+      last4: Value(last4),
+    ));
+  }
+
+  /// Get all accounts for a specific profile
+  Future<List<Account>> getAccountsByProfile(String profileId) async {
+    final query = select(accounts)
+      ..where((t) => t.profileId.equals(profileId));
+    return query.get();
+  }
+
+  /// Update which profile an account belongs to
+  Future<void> updateAccountProfile(int accountId, String? profileId) async {
+    await (update(accounts)..where((t) => t.id.equals(accountId)))
+        .write(AccountsCompanion(
+          profileId: profileId != null ? Value(profileId) : const Value(null),
+        ));
+  }
+
   Future<List<SmsMessage>> getAllSmsMessages() async {
     return (select(smsMessages)
           ..orderBy([(t) => OrderingTerm.desc(t.receivedAtMs)]))
@@ -406,12 +507,14 @@ class AppDatabase extends _$AppDatabase {
     required String last4,
     required double balance,
     required int updatedAtMs,
+    String? profileId,
   }) async {
-    // Match by institution only — for personal use, one account per institution is assumed.
-    // This avoids duplicates when different SMS formats mask the account number differently
-    // (e.g., HNB credit shows "02702XXXXX71" while debit shows "0270***4971").
+    // Match by (profileId + institution + last4) to handle same account in different profiles
     final existing = await (select(accounts)
-          ..where((t) => t.institution.equals(institution)))
+          ..where((t) =>
+              t.institution.equals(institution) &
+              t.last4.equals(last4) &
+              (profileId == null ? t.profileId.isNull() : t.profileId.equals(profileId))))
         .getSingleOrNull();
 
     if (existing != null) {
@@ -427,7 +530,8 @@ class AppDatabase extends _$AppDatabase {
       }
     } else {
       await into(accounts).insert(AccountsCompanion.insert(
-        name: '$institution …$last4',
+        profileId: profileId != null ? Value(profileId) : const Value.absent(),
+        name: '$institution-****$last4',
         institution: institution,
         type: 'bank',
         last4: Value(last4),

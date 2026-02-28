@@ -140,92 +140,146 @@ class _BankBalanceCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final accountsAsync = ref.watch(accountsProvider);
+    final profileAccountsAsync = ref.watch(profileAccountsProvider);
+    final activeProfileAsync = ref.watch(activeProfileIdProvider);
+    final profileListAsync = ref.watch(profileListProvider);
     final selectedBank = ref.watch(selectedBankProvider);
 
-    return accountsAsync.when(
-      data: (accounts) {
-        if (accounts.isEmpty) return const SizedBox.shrink();
+    return activeProfileAsync.when(
+      data: (activeProfileId) {
+        // Find active profile name
+        final profiles = ref.watch(profileListProvider);
+        final activeProfile = profiles.where((p) => p.id == activeProfileId).firstOrNull;
+        final profileName = activeProfile?.name ?? 'My Account';
 
-        final institutions = accounts
-            .map((a) => a.institution)
-            .toSet()
-            .toList()
-          ..sort();
-
-        final filtered = selectedBank == null
-            ? accounts
-            : accounts.where((a) => a.institution == selectedBank).toList();
-
-        final totalBalance = filtered.fold<double>(
-          0,
-          (sum, a) => sum + (a.balance ?? 0),
-        );
-
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Available Balance',
-                        style: theme.textTheme.titleMedium),
-                    DropdownButton<String?>(
-                      value: selectedBank,
-                      underline: const SizedBox.shrink(),
-                      isDense: true,
-                      items: [
-                        const DropdownMenuItem(
-                          value: null,
-                          child: Text('All Banks'),
+        return profileAccountsAsync.when(
+          data: (profileAccounts) {
+            if (profileAccounts.isEmpty) {
+              return Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Available Balance ($profileName)',
+                          style: theme.textTheme.titleMedium),
+                      const SizedBox(height: 12),
+                      Text(
+                        '0.00',
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.primary,
                         ),
-                        ...institutions.map((inst) => DropdownMenuItem(
-                              value: inst,
-                              child: Text(inst),
-                            )),
-                      ],
-                      onChanged: (val) =>
-                          ref.read(selectedBankProvider.notifier).state = val,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  totalBalance.toCurrencyString(),
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.primary,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'No accounts assigned to this profile. Go to Settings > Account Management to assign accounts.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                if (selectedBank == null && accounts.length > 1) ...[
-                  const SizedBox(height: 8),
-                  ...accounts.map((a) => Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              );
+            }
+
+            final institutions = profileAccounts
+                .map((a) => a.institution)
+                .toSet()
+                .toList()
+              ..sort();
+
+            final filtered = selectedBank == null
+                ? profileAccounts
+                : profileAccounts.where((a) => a.institution == selectedBank).toList();
+
+            final totalBalance = filtered.fold<double>(
+              0,
+              (sum, a) => sum + (a.balance ?? 0),
+            );
+
+            return Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            Text('Available Balance',
+                                style: theme.textTheme.titleMedium),
+                            const SizedBox(height: 4),
                             Text(
-                              '${a.institution} ···${a.last4 ?? ''}',
+                              '$profileName · ${profileAccounts.length} account${profileAccounts.length != 1 ? 's' : ''}',
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: colorScheme.onSurfaceVariant,
                               ),
                             ),
-                            Text(
-                              (a.balance ?? 0).toCurrencyString(),
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
                           ],
                         ),
-                      )),
-                ],
-              ],
-            ),
-          ),
+                        if (institutions.isNotEmpty)
+                          DropdownButton<String?>(
+                            value: selectedBank,
+                            underline: const SizedBox.shrink(),
+                            isDense: true,
+                            items: [
+                              const DropdownMenuItem(
+                                value: null,
+                                child: Text('All Banks'),
+                              ),
+                              ...institutions.map((inst) => DropdownMenuItem(
+                                    value: inst,
+                                    child: Text(inst),
+                                  )),
+                            ],
+                            onChanged: (val) =>
+                                ref.read(selectedBankProvider.notifier).state = val,
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      totalBalance.toCurrencyString(),
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                    if (selectedBank == null && profileAccounts.length > 1) ...[
+                      const SizedBox(height: 8),
+                      ...profileAccounts.map((a) => Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  '${a.institution} ···${a.last4 ?? ''}',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                Text(
+                                  (a.balance ?? 0).toCurrencyString(),
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+          loading: () => const SizedBox.shrink(),
+          error: (_, __) => const SizedBox.shrink(),
         );
       },
       loading: () => const SizedBox.shrink(),

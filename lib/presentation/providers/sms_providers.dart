@@ -106,6 +106,8 @@ class SmsImportNotifier extends StateNotifier<SmsImportState> {
     _ref.invalidate(holdingsProvider);
     _ref.invalidate(investmentEventsProvider);
     _ref.invalidate(accountsProvider);
+    _ref.invalidate(uniqueAccountsProvider);
+    _ref.invalidate(profileAccountsProvider);
     _ref.invalidate(monthlyCashflowProvider);
   }
 
@@ -126,6 +128,11 @@ class SmsImportNotifier extends StateNotifier<SmsImportState> {
         debugMode: _ref.read(debugModeProvider),
       );
       await service.ingestSms(msg, profileId: profileId);
+
+      // Refresh account-related providers when new SMS is ingested
+      _ref.invalidate(accountsProvider);
+      _ref.invalidate(uniqueAccountsProvider);
+      _ref.invalidate(profileAccountsProvider);
     });
 
     state = state.copyWith(

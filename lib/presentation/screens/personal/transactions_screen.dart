@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sync_ledger/core/extensions.dart';
 import 'package:sync_ledger/data/db/app_database.dart';
 import 'package:sync_ledger/domain/models/enums.dart';
+import 'package:sync_ledger/presentation/providers/app_providers.dart';
 import 'package:sync_ledger/presentation/providers/transaction_providers.dart';
 import 'package:sync_ledger/presentation/widgets/category_picker.dart';
 
@@ -37,9 +38,35 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
         query: _searchQuery,
       ),),
     );
+    final activeProfileAsync = ref.watch(activeProfileIdProvider);
+    final profileAccountsAsync = ref.watch(profileAccountsProvider);
+    final profiles = ref.watch(profileListProvider);
 
     return Column(
       children: [
+        // Profile indicator
+        activeProfileAsync.when(
+          data: (activeProfileId) {
+            final activeProfile = profiles.where((p) => p.id == activeProfileId).firstOrNull;
+            return profileAccountsAsync.when(
+              data: (profileAccounts) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: Text(
+                    'Showing ${activeProfile?.name ?? 'My Account'} transactions (${profileAccounts.length} account${profileAccounts.length != 1 ? 's' : ''})',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                );
+              },
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
+            );
+          },
+          loading: () => const SizedBox.shrink(),
+          error: (_, __) => const SizedBox.shrink(),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: TextField(

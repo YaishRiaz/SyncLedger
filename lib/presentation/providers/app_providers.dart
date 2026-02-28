@@ -152,5 +152,24 @@ final accountsProvider = FutureProvider<List<Account>>((ref) async {
   return db.getAllAccounts();
 });
 
+/// Unique accounts across all profiles (deduplicated by institution + last4)
+/// Shows only one entry per unique account regardless of how many profiles it's assigned to.
+/// Used in Settings Account Management UI.
+final uniqueAccountsProvider = FutureProvider<List<Account>>((ref) async {
+  final db = ref.watch(databaseProvider);
+  return db.getUniqueAccountsAcrossProfiles();
+});
+
 /// Selected institution filter for dashboard. null = All Banks.
 final selectedBankProvider = StateProvider<String?>((ref) => null);
+
+// ─── Profile-Based Account Management ────────────────────────────────────────
+
+/// All accounts assigned to the currently active profile.
+/// Returns empty list if no accounts are assigned to the profile.
+/// Auto-updates when profile switches.
+final profileAccountsProvider = FutureProvider<List<Account>>((ref) async {
+  final db = ref.watch(databaseProvider);
+  final activeProfileId = await ref.watch(activeProfileIdProvider.future);
+  return db.getAccountsByProfile(activeProfileId);
+});

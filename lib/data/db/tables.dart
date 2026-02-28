@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 
 class Accounts extends Table {
   IntColumn get id => integer().autoIncrement()();
+  TextColumn get profileId => text().nullable()(); // Profile this account belongs to
   TextColumn get name => text()();
   TextColumn get institution => text()();
   TextColumn get type => text()(); // bank, broker

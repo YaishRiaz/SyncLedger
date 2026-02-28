@@ -17,6 +17,7 @@ class CashflowData {
 final monthlyCashflowProvider = FutureProvider<CashflowData>((ref) async {
   final db = ref.watch(databaseProvider);
   final selectedBank = ref.watch(selectedBankProvider); // null = All Banks
+  final profileAccounts = await ref.watch(profileAccountsProvider.future);
   final now = DateTime.now();
   final startOfMonth = DateTime(now.year, now.month, 1);
   final startMs = startOfMonth.millisecondsSinceEpoch;
@@ -30,16 +31,27 @@ final monthlyCashflowProvider = FutureProvider<CashflowData>((ref) async {
     allowedSmsIds = await db.getSmsIdsByInstitution(selectedBank);
   }
 
+  // Build set of account IDs assigned to active profile
+  final profileAccountIds = {for (final a in profileAccounts) a.id};
+
   double income = 0;
   double expense = 0;
   double transfers = 0;
 
   for (final t in txns) {
     if (t.currency != 'LKR') continue;
+
+    // Filter by profile's assigned accounts
+    if (t.accountId == null || !profileAccountIds.contains(t.accountId)) {
+      continue;
+    }
+
+    // Filter by bank if selected
     if (allowedSmsIds != null &&
         (t.sourceSmsId == null || !allowedSmsIds.contains(t.sourceSmsId))) {
       continue;
     }
+
     if (t.transferGroupId != null) {
       transfers += t.amount;
       continue;
@@ -94,10 +106,20 @@ final filteredTransactionsProvider = FutureProvider.family<
     List<Transaction>, ({TransactionType? type, String query})>(
   (ref, params) async {
     final db = ref.watch(databaseProvider);
-    return db.getFilteredTransactions(
+    final profileAccounts = await ref.watch(profileAccountsProvider.future);
+
+    final allTransactions = await db.getFilteredTransactions(
       type: params.type?.name,
       query: params.query,
     );
+
+    // Build set of account IDs assigned to active profile
+    final profileAccountIds = {for (final a in profileAccounts) a.id};
+
+    // Filter to show only transactions from profile's assigned accounts
+    return allTransactions
+        .where((t) => t.accountId != null && profileAccountIds.contains(t.accountId))
+        .toList();
   },
 );
 

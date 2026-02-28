@@ -37,6 +37,16 @@ abstract final class ParseUtils {
     return digits.substring(digits.length - 4);
   }
 
+  /// Extracts the last 2 digits from an account string, ignoring mask characters.
+  /// Use this instead of extractLast4 to avoid mismatches when the same account
+  /// is displayed with different masking (e.g. "XXXXX71" vs "***4971").
+  static String? extractLast2(String? account) {
+    if (account == null || account.isEmpty) return null;
+    final digits = account.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.length < 2) return null;
+    return digits.substring(digits.length - 2);
+  }
+
   /// Extract last 4 digits from various account formats
   static String? extractLast4Flexible(String text) {
     // Look for account numbers in various formats

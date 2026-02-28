@@ -38,8 +38,9 @@ class GenericBankParser implements SmsParser {
       parsedDate = DateTime.fromMillisecondsSinceEpoch(receivedAtMs);
     }
 
-    // Extract account hint (last 4 digits)
-    final accountHint = ParseUtils.extractLast4Flexible(normalized);
+    // Extract account hint (last 2 digits) to match specific bank parsers
+    // This prevents transaction reference numbers from being mistaken for account identifiers
+    final accountHint = _extractAccountLast2(normalized);
 
     // Extract balance if present
     final balance = ParseUtils.extractBalance(normalized);
@@ -166,6 +167,30 @@ class GenericBankParser implements SmsParser {
     }
 
     return TransactionType.income;
+  }
+
+  /// Extract the last 2 digits from an account number in the message.
+  /// Looks for patterns like "AC XXXXXXXX1234" or "Account: 1234567890"
+  /// and extracts the last 2 digits to match HNB/NDB parser behavior.
+  String? _extractAccountLast2(String text) {
+    // Look for account number patterns before any reference numbers
+    final patterns = [
+      RegExp(r'AC(?:OUNT)?\s*(?:NO\.?|:)?\s*(\S{6,}?)(?:\s|$)', caseSensitive: false),
+      RegExp(r'(?:from|to|account)\s+(\d{6,})(?:\s|$)', caseSensitive: false),
+      RegExp(r'Ac\s*No[:\s]*(\S+?)(?:\s+on\s|\s|$)', caseSensitive: false),
+    ];
+
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(text);
+      if (match != null) {
+        final account = match.group(1);
+        if (account != null) {
+          return ParseUtils.extractLast2(account);
+        }
+      }
+    }
+
+    return null;
   }
 
   /// Extract bank name from sender ID

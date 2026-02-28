@@ -143,6 +143,11 @@ class SettingsScreen extends ConsumerWidget {
           _ProfilesSection(),
           const Divider(),
 
+          // ── Account Management ───────────────────────────────────────────
+          const _SectionHeader(title: 'Account Management'),
+          _AccountManagementSection(),
+          const Divider(),
+
           // ── Family Sync ──────────────────────────────────────────────────
           Consumer(
             builder: (context, ref, _) {
@@ -386,6 +391,100 @@ class _ProfileBottomSheetState extends ConsumerState<_ProfileBottomSheet> {
   }
 }
 
+// ─── Account Management Section ──────────────────────────────────────────────
+
+class _AccountManagementSection extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final uniqueAccountsAsync = ref.watch(uniqueAccountsProvider);
+    final profileAccountsAsync = ref.watch(profileAccountsProvider);
+    final activeProfileAsync = ref.watch(activeProfileIdProvider);
+
+    return activeProfileAsync.when(
+      data: (activeProfileId) {
+        return profileAccountsAsync.when(
+          data: (profileAccounts) {
+            return uniqueAccountsAsync.when(
+              data: (uniqueAccounts) {
+                if (uniqueAccounts.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Text(
+                      'No accounts discovered yet. Import SMS to discover accounts.',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  );
+                }
+
+                final assignedIds = {for (final a in profileAccounts) a.id};
+
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Text(
+                        'Select accounts to include in this profile. Only selected accounts will show transactions.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                    ...uniqueAccounts.map((account) {
+                      final isAssigned = assignedIds.contains(account.id);
+                      return CheckboxListTile(
+                        key: ValueKey('account_${account.id}'),
+                        value: isAssigned,
+                        onChanged: (value) async {
+                          final db = ref.read(databaseProvider);
+                          await db.updateAccountProfile(
+                            account.id,
+                            value != false ? activeProfileId : null,
+                          );
+                          // Invalidate providers to refresh the UI
+                          ref.invalidate(profileAccountsProvider);
+                          ref.invalidate(uniqueAccountsProvider);
+                          ref.invalidate(monthlyCashflowProvider);
+                          ref.invalidate(filteredTransactionsProvider);
+                        },
+                        title: Text(account.name),
+                        subtitle: Text(
+                          '${account.institution}${account.balance != null ? ' · Balance: ${account.balance!.toStringAsFixed(2)}' : ''}',
+                        ),
+                      );
+                    }).toList(),
+                  ],
+                );
+              },
+              loading: () => const Padding(
+                padding: EdgeInsets.all(16),
+                child: CircularProgressIndicator(),
+              ),
+              error: (_, __) => const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('Error loading accounts'),
+              ),
+            );
+          },
+          loading: () => const Padding(
+            padding: EdgeInsets.all(16),
+            child: CircularProgressIndicator(),
+          ),
+          error: (_, __) => const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('Error loading profile accounts'),
+          ),
+        );
+      },
+      loading: () => const Padding(
+        padding: EdgeInsets.all(16),
+        child: CircularProgressIndicator(),
+      ),
+      error: (_, __) => const Padding(
+        padding: EdgeInsets.all(16),
+        child: Text('Error loading profile'),
+      ),
+    );
+  }
+}
+
 // ─── Family Sync Section ─────────────────────────────────────────────────────
 
 class _FamilySyncSection extends ConsumerWidget {
@@ -590,12 +689,18 @@ class _ClearDataTile extends ConsumerWidget {
 
     if (confirmed != true) return;
 
+    // Stop SMS listener first to prevent re-ingesting old SMS messages
+    final smsNotifier = ref.read(smsImportStateProvider.notifier);
+    await smsNotifier.stopListening();
+
     final db = ref.read(databaseProvider);
     await db.deleteAllData();
 
     // Refresh all data-dependent providers
+    // Note: Don't invalidate smsImportStateProvider to prevent auto-restarting the SMS listener
     ref.invalidate(accountsProvider);
-    ref.invalidate(smsImportStateProvider);
+    ref.invalidate(uniqueAccountsProvider);
+    ref.invalidate(profileAccountsProvider);
     ref.invalidate(holdingsProvider);
     ref.invalidate(investmentEventsProvider);
     ref.invalidate(monthlyCashflowProvider);
