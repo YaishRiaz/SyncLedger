@@ -199,21 +199,11 @@ class PortfolioCalculatorService {
       // Calculate metrics
       final currentValue = position.qty * latestPrice.closePrice;
 
-      // Calculate average cost (simple)
-      double totalCost = 0.0;
-      for (final event in symbolEvents) {
-        if (event.eventType == 'buy' || event.eventType == 'deposit') {
-          // Note: We don't have cost info in events, this is approximate
-        } else if (event.eventType == 'sell' || event.eventType == 'withdrawal') {
-          // Note: tracking selling doesn't affect our current cost basis
-        }
-      }
-
-      final costBasis =
-          totalCost > 0 ? totalCost : (currentValue * 0.9); // Estimate if unknown
-      final gainLoss = currentValue - costBasis;
-      final gainLossPercent =
-          costBasis > 0 ? (gainLoss / costBasis) * 100 : 0.0;
+      // Investment events don't carry purchase price, so cost basis is unknown.
+      // Show 0 gain/loss rather than a fake estimate.
+      const double gainLoss = 0.0;
+      const double gainLossPercent = 0.0;
+      final costBasis = currentValue;
 
       return StockDetails(
         symbol: symbol,

@@ -151,6 +151,21 @@ class _FilterChip extends StatelessWidget {
   }
 }
 
+String _typeLabel(String type, String direction) {
+  switch (type) {
+    case 'transfer':
+      return 'Transfer';
+    case 'fee':
+      return 'Bank Fee';
+    case 'reversal':
+      return 'Reversal';
+    case 'investment':
+      return 'Investment';
+    default:
+      return direction == 'income' ? 'Bank Credit' : 'Bank Debit';
+  }
+}
+
 class _TransactionTile extends ConsumerWidget {
   const _TransactionTile({required this.transaction});
 
@@ -174,7 +189,9 @@ class _TransactionTile extends ConsumerWidget {
         ),
       ),
       title: Text(
-        transaction.merchant ?? transaction.type,
+        transaction.merchant ??
+            transaction.reference ??
+            _typeLabel(transaction.type, transaction.direction),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),

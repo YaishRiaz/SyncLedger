@@ -17,12 +17,14 @@ class CashflowData {
 final monthlyCashflowProvider = FutureProvider<CashflowData>((ref) async {
   final db = ref.watch(databaseProvider);
   final selectedBank = ref.watch(selectedBankProvider); // null = All Banks
-  final profileAccounts = await ref.watch(profileAccountsProvider.future);
+  final activeProfileId = await ref.watch(activeProfileIdProvider.future);
   final now = DateTime.now();
   final startOfMonth = DateTime(now.year, now.month, 1);
   final startMs = startOfMonth.millisecondsSinceEpoch;
 
-  final txns = await db.getTransactionsSince(startMs);
+  // profileId applied at DB level — ensures all transactions for this profile
+  // are included regardless of whether accountId is set
+  final txns = await db.getTransactionsSince(startMs, profileId: activeProfileId);
 
   // When a specific bank is selected, only include transactions sourced from
   // SMS messages whose sender contains that institution name.
@@ -31,20 +33,12 @@ final monthlyCashflowProvider = FutureProvider<CashflowData>((ref) async {
     allowedSmsIds = await db.getSmsIdsByInstitution(selectedBank);
   }
 
-  // Build set of account IDs assigned to active profile
-  final profileAccountIds = {for (final a in profileAccounts) a.id};
-
   double income = 0;
   double expense = 0;
   double transfers = 0;
 
   for (final t in txns) {
     if (t.currency != 'LKR') continue;
-
-    // Filter by profile's assigned accounts
-    if (t.accountId == null || !profileAccountIds.contains(t.accountId)) {
-      continue;
-    }
 
     // Filter by bank if selected
     if (allowedSmsIds != null &&
@@ -107,18 +101,20 @@ final filteredTransactionsProvider = FutureProvider.family<
   (ref, params) async {
     final db = ref.watch(databaseProvider);
     final profileAccounts = await ref.watch(profileAccountsProvider.future);
+    final activeProfileId = await ref.watch(activeProfileIdProvider.future);
 
     final allTransactions = await db.getFilteredTransactions(
       type: params.type?.name,
       query: params.query,
     );
 
-    // Build set of account IDs assigned to active profile
     final profileAccountIds = {for (final a in profileAccounts) a.id};
 
-    // Filter to show only transactions from profile's assigned accounts
+    // Match by profileId (primary) or by linked account (fallback)
     return allTransactions
-        .where((t) => t.accountId != null && profileAccountIds.contains(t.accountId))
+        .where((t) =>
+            t.profileId == activeProfileId ||
+            (t.accountId != null && profileAccountIds.contains(t.accountId)))
         .toList();
   },
 );

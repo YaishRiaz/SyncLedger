@@ -149,11 +149,14 @@ class AppDatabase extends _$AppDatabase {
     ),);
   }
 
-  Future<List<Transaction>> getTransactionsSince(int sinceMs) async {
+  Future<List<Transaction>> getTransactionsSince(int sinceMs, {String? profileId}) async {
     final query = select(transactions)
       ..where((t) => t.occurredAtMs.isBiggerOrEqualValue(sinceMs))
-      ..where((t) => t.scope.equals('personal'))
-      ..orderBy([(t) => OrderingTerm.desc(t.occurredAtMs)]);
+      ..where((t) => t.scope.equals('personal'));
+    if (profileId != null) {
+      query.where((t) => t.profileId.equals(profileId));
+    }
+    query.orderBy([(t) => OrderingTerm.desc(t.occurredAtMs)]);
     return query.get();
   }
 
@@ -178,7 +181,13 @@ class AppDatabase extends _$AppDatabase {
       ..orderBy([(t) => OrderingTerm.desc(t.occurredAtMs)]);
 
     if (type != null) {
-      q.where((t) => t.type.equals(type));
+      // 'income' and 'expense' filter by direction (the actual money flow),
+      // not by type — a transfer fee has type='fee' but direction='expense'.
+      if (type == 'income' || type == 'expense') {
+        q.where((t) => t.direction.equals(type));
+      } else {
+        q.where((t) => t.type.equals(type));
+      }
     }
 
     final results = await q.get();

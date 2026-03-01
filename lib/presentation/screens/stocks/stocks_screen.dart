@@ -24,6 +24,8 @@ class _StocksScreenState extends ConsumerState<StocksScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    // Auto-fetch prices on first load
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshPortfolio());
   }
 
   @override
@@ -35,16 +37,16 @@ class _StocksScreenState extends ConsumerState<StocksScreen>
   Future<void> _refreshPortfolio() async {
     setState(() => _isRefreshing = true);
     try {
-      // Trigger calculator to update portfolio value
+      // Fetch latest prices from CSE, store them, then recalculate portfolio
       final calculator = ref.read(portfolioCalculatorProvider);
       final activeId = await ref.read(activeProfileIdProvider.future);
-      if (activeId == null) return;
-      await calculator.calculateAndStorePortfolioValue(activeId);
+      await calculator.updatePricesAndRecalculatePortfolio([activeId]);
 
       // Invalidate related providers to refresh UI
       ref.invalidate(portfolioValueHistoryProvider);
       ref.invalidate(totalPortfolioValueProvider);
       ref.invalidate(latestPortfolioValueProvider);
+      ref.invalidate(holdingsProvider);
     } finally {
       setState(() => _isRefreshing = false);
     }
@@ -146,17 +148,26 @@ class _StocksScreenState extends ConsumerState<StocksScreen>
           // Portfolio Value Graph Tab
           portfolioHistory.when(
             data: (history) {
-              if (history.isEmpty) {
+              if (history.length < 2) {
                 return Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const Icon(Icons.trending_up_outlined, size: 48, color: Colors.grey),
                       const SizedBox(height: 16),
-                      const Text('No portfolio data yet'),
+                      Text(
+                        history.isEmpty
+                            ? 'No portfolio data yet'
+                            : 'LKR ${history.first.totalValue.toStringAsFixed(2)}',
+                        style: history.isEmpty
+                            ? null
+                            : theme.textTheme.headlineSmall,
+                      ),
                       const SizedBox(height: 8),
                       Text(
-                        'Portfolio value is calculated daily at market close',
+                        history.isEmpty
+                            ? 'Tap refresh to fetch current prices'
+                            : 'Refresh daily to build portfolio history',
                         style: theme.textTheme.bodySmall,
                       ),
                     ],

@@ -137,10 +137,10 @@ class StockDetailScreen extends ConsumerWidget {
         // Gain/Loss Card
         Card(
           color: details.isPositive
-              ? Colors.green.shade50
+              ? Colors.green.withValues(alpha: 0.15)
               : details.isNegative
-                  ? Colors.red.shade50
-                  : Colors.grey.shade50,
+                  ? Colors.red.withValues(alpha: 0.15)
+                  : Theme.of(context).colorScheme.surfaceContainerHighest,
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
