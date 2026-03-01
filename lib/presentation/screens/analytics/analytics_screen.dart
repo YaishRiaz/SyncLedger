@@ -3,12 +3,146 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:sync_ledger/core/extensions.dart';
 import 'package:sync_ledger/presentation/providers/analytics_providers.dart';
+import 'package:sync_ledger/presentation/providers/app_providers.dart';
+import 'package:sync_ledger/presentation/providers/report_providers.dart';
+import 'package:sync_ledger/presentation/widgets/report_date_selector.dart';
+import 'package:printing/printing.dart';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:path_provider/path_provider.dart';
 
-class AnalyticsScreen extends ConsumerWidget {
+class AnalyticsScreen extends ConsumerStatefulWidget {
   const AnalyticsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AnalyticsScreen> createState() => _AnalyticsScreenState();
+}
+
+class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
+  bool _isGeneratingReport = false;
+
+  Future<void> _downloadReport() async {
+    // Show date selector modal
+    final dateRange = await ReportDateSelectorModal.show(context);
+    if (dateRange == null) return;
+
+    setState(() => _isGeneratingReport = true);
+
+    try {
+      // Get the generator service and generate PDF
+      final generator = ref.read(pdfReportGeneratorProvider);
+      final activeId = await ref.read(activeProfileIdProvider.future);
+
+      final pdfBytes = await generator.generateIncomeExpenseReport(
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate,
+        profileId: activeId,
+      );
+
+      if (!mounted) return;
+
+      // Save or share the PDF
+      await _savePdf(pdfBytes, dateRange);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Report generated successfully'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to generate report: $e'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } finally {
+      setState(() => _isGeneratingReport = false);
+    }
+  }
+
+  Future<void> _savePdf(List<int> pdfBytes, DateRange dateRange) async {
+    // Show save/share dialog
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Save Report'),
+        content: Text(
+          'Report for ${dateRange.label}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              // Share via system share sheet
+              await Printing.sharePdf(
+                bytes: Uint8List.fromList(pdfBytes),
+                filename:
+                    'Income_Report_${_formatDateForFilename(dateRange.startDate)}_to_${_formatDateForFilename(dateRange.endDate)}.pdf',
+              );
+            },
+            child: const Text('Share'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              // Save to downloads folder
+              try {
+                final directory = await getDownloadsDirectory();
+                if (directory == null) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Downloads directory not found'),
+                    ),
+                  );
+                  return;
+                }
+
+                final filename =
+                    'Income_Report_${_formatDateForFilename(dateRange.startDate)}_to_${_formatDateForFilename(dateRange.endDate)}.pdf';
+                final file = File('${directory.path}/$filename');
+                await file.writeAsBytes(pdfBytes);
+
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Report saved to ${file.path}'),
+                    duration: const Duration(seconds: 3),
+                  ),
+                );
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Failed to save: $e'),
+                    duration: const Duration(seconds: 3),
+                  ),
+                );
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDateForFilename(DateTime date) {
+    return '${date.year}${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final selectedPeriod = ref.watch(analyticsSelectedPeriodProvider);
@@ -16,15 +150,34 @@ class AnalyticsScreen extends ConsumerWidget {
     final topMerchants = ref.watch(topMerchantsProvider);
     final categoryBreakdown = ref.watch(categoryBreakdownProvider);
 
-    return RefreshIndicator(
-      onRefresh: () async {
-        ref.invalidate(monthlyAnalyticsProvider);
-        ref.invalidate(topMerchantsProvider);
-        ref.invalidate(categoryBreakdownProvider);
-      },
-      child: ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Analytics'),
+        actions: [
+          IconButton(
+            icon: _isGeneratingReport
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                    ),
+                  )
+                : const Icon(Icons.download),
+            onPressed: _isGeneratingReport ? null : _downloadReport,
+            tooltip: 'Download Report',
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          ref.invalidate(monthlyAnalyticsProvider);
+          ref.invalidate(topMerchantsProvider);
+          ref.invalidate(categoryBreakdownProvider);
+        },
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
         // ── Period selector ────────────────────────────────────────────────
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
@@ -316,8 +469,9 @@ class AnalyticsScreen extends ConsumerWidget {
           error: (e, _) => Text('Error: $e'),
         ),
         const SizedBox(height: 16),
-      ],
-    ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -59,49 +59,69 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final familySyncEnabledAsync = ref.watch(familySyncEnabledProvider);
+    final stockAnalysisEnabledAsync = ref.watch(enableStockAnalysisProvider);
 
     return familySyncEnabledAsync.when(
       data: (isFamilyEnabled) {
-        // Build dynamic destination and screen lists based on setting
-        final destinations = [
-          ..._baseDestinations,
-          if (isFamilyEnabled) _familyDestination,
-        ];
+        return stockAnalysisEnabledAsync.when(
+          data: (isStockAnalysisEnabled) {
+            // Build dynamic destination and screen lists based on settings
+            final destinations = [
+              _baseDestinations[0], // Dashboard
+              _baseDestinations[1], // Transactions
+              if (isStockAnalysisEnabled) _baseDestinations[2], // Stocks (conditional)
+              _baseDestinations[3], // Analytics
+              if (isFamilyEnabled) _familyDestination,
+            ];
 
-        final screens = [
-          ..._baseScreens,
-          if (isFamilyEnabled) _familyScreen,
-        ];
+            final screens = [
+              _baseScreens[0], // Dashboard
+              _baseScreens[1], // Transactions
+              if (isStockAnalysisEnabled) _baseScreens[2], // Stocks (conditional)
+              _baseScreens[3], // Analytics
+              if (isFamilyEnabled) _familyScreen,
+            ];
 
-        // Adjust selected index if family is disabled and we were on it
-        final currentIndex = _selectedIndex;
-        if (!isFamilyEnabled && currentIndex >= _baseDestinations.length) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            setState(() => _selectedIndex = 0);
-          });
-        }
+            // Adjust selected index if stocks or family were disabled
+            final currentIndex = _selectedIndex;
+            final maxValidIndex = screens.length - 1;
+            if (currentIndex > maxValidIndex) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                setState(() => _selectedIndex = 0);
+              });
+            }
 
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('SyncLedger'),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.settings_outlined),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                ),
+            return Scaffold(
+              appBar: AppBar(
+                title: const Text('SyncLedger'),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.settings_outlined),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                    ),
+                  ),
+                ],
               ),
-            ],
+              body: IndexedStack(
+                index: currentIndex,
+                children: screens,
+              ),
+              bottomNavigationBar: NavigationBar(
+                selectedIndex: currentIndex,
+                onDestinationSelected: (i) =>
+                    setState(() => _selectedIndex = i),
+                destinations: destinations,
+              ),
+            );
+          },
+          loading: () => Scaffold(
+            appBar: AppBar(title: const Text('SyncLedger')),
+            body: const Center(child: CircularProgressIndicator()),
           ),
-          body: IndexedStack(
-            index: currentIndex,
-            children: screens,
-          ),
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: currentIndex,
-            onDestinationSelected: (i) =>
-                setState(() => _selectedIndex = i),
-            destinations: destinations,
+          error: (_, __) => Scaffold(
+            appBar: AppBar(title: const Text('SyncLedger')),
+            body: const Center(child: Text('Error loading settings')),
           ),
         );
       },

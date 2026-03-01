@@ -81,6 +81,36 @@ class Positions extends Table {
   Set<Column> get primaryKey => {profileId, symbol};
 }
 
+/// Stock price data from CSE (Colombo Stock Exchange)
+/// Stores historical end-of-day prices for stocks
+class StockPrices extends Table {
+  TextColumn get symbol => text()(); // Stock ticker (e.g., "ASPIDF", "COMB")
+  IntColumn get priceDate => integer()(); // Date in YYYYMMDD format (e.g., 20260228)
+  RealColumn get closePrice => real()(); // EOD close price in LKR
+  RealColumn get highPrice => real().nullable()();
+  RealColumn get lowPrice => real().nullable()();
+  RealColumn get openPrice => real().nullable()();
+  IntColumn get volume => integer().nullable()();
+  IntColumn get fetchedAtMs => integer()(); // Timestamp when price was fetched
+
+  @override
+  Set<Column> get primaryKey => {symbol, priceDate};
+}
+
+/// Daily portfolio value tracking
+/// Stores calculated portfolio value for each user profile
+class PortfolioValue extends Table {
+  TextColumn get profileId => text()(); // User profile
+  IntColumn get valueDate => integer()(); // Date in YYYYMMDD format (e.g., 20260228)
+  RealColumn get totalValue => real()(); // Total portfolio value in LKR
+  RealColumn get dayChangeAmount => real().nullable()(); // Change from previous day
+  RealColumn get dayChangePercent => real().nullable()(); // % change from previous day
+  IntColumn get calculatedAtMs => integer()(); // Timestamp when calculated
+
+  @override
+  Set<Column> get primaryKey => {profileId, valueDate};
+}
+
 class Changes extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get deviceId => text()();

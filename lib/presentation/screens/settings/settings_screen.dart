@@ -74,6 +74,42 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const Divider(),
 
+          // ── Features ───────────────────────────────────────────────────────
+          const _SectionHeader(title: 'Features'),
+          Consumer(
+            builder: (context, ref, _) {
+              final stockAnalysisEnabled = ref.watch(enableStockAnalysisProvider);
+
+              return stockAnalysisEnabled.when(
+                data: (enabled) => SwitchListTile(
+                  title: const Text('Stock Analysis'),
+                  subtitle: const Text(
+                    'Enable portfolio tracking and stock analysis features',
+                  ),
+                  value: enabled,
+                  onChanged: (v) async {
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setBool(PrefKeys.enableStockAnalysis, v);
+                    ref.invalidate(enableStockAnalysisProvider);
+                  },
+                ),
+                loading: () => const SwitchListTile(
+                  title: Text('Stock Analysis'),
+                  subtitle: Text('Loading...'),
+                  value: false,
+                  onChanged: null,
+                ),
+                error: (_, __) => const SwitchListTile(
+                  title: Text('Stock Analysis'),
+                  subtitle: Text('Error loading'),
+                  value: false,
+                  onChanged: null,
+                ),
+              );
+            },
+          ),
+          const Divider(),
+
           // ── SMS Listener ─────────────────────────────────────────────────
           const _SectionHeader(title: 'SMS Listener'),
           Consumer(

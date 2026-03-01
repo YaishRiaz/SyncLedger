@@ -53,6 +53,18 @@ dependencies:
   logger: ^2.0.2+1
   crypto: ^3.0.3
 
+  # Web scraping (for CSE stock prices)
+  http: ^1.1.0
+  html: ^0.15.4
+
+  # Background task scheduling
+  workmanager: ^0.5.2
+
+  # PDF generation and export
+  pdf: ^3.10.0
+  printing: ^5.12.0
+  image: ^4.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

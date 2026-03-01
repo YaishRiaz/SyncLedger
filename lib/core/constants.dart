@@ -32,4 +32,5 @@ abstract final class PrefKeys {
   static const lastSyncSeq = 'last_sync_seq';
   static const profiles = 'profiles';
   static const familySyncEnabled = 'family_sync_enabled';
+  static const enableStockAnalysis = 'enable_stock_analysis';
 }

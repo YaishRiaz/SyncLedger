@@ -144,6 +144,12 @@ final appLockEnabledProvider = FutureProvider<bool>((ref) async {
   return prefs.getBool(PrefKeys.appLockEnabled) ?? false;
 });
 
+// Stock analysis enabled provider (default: true)
+final enableStockAnalysisProvider = FutureProvider<bool>((ref) async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getBool(PrefKeys.enableStockAnalysis) ?? true;
+});
+
 // ─── Accounts / Bank Balances ────────────────────────────────────────────────
 
 /// All bank accounts with their latest balances

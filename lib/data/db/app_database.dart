@@ -17,6 +17,8 @@ part 'app_database.g.dart';
   TransferLinks,
   InvestmentEvents,
   Positions,
+  StockPrices,
+  PortfolioValue,
   Changes,
   AutoTagRules,
 ],)
@@ -26,7 +28,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration {
@@ -38,6 +40,12 @@ class AppDatabase extends _$AppDatabase {
         }
         if (from < 3) {
           await migrator.addColumn(accounts, accounts.profileId);
+        }
+        if (from < 4) {
+          // Create StockPrices table
+          await migrator.create(stockPrices);
+          // Create PortfolioValue table
+          await migrator.create(portfolioValue);
         }
       },
     );
@@ -205,6 +213,22 @@ class AppDatabase extends _$AppDatabase {
         .write(TransactionsCompanion(transferGroupId: Value(groupId)));
   }
 
+  /// Get transactions for a specific profile within a date range
+  /// Used for PDF report generation
+  Future<List<Transaction>> getTransactionsByDateRange(
+    String profileId,
+    int startTimeMs,
+    int endTimeMs,
+  ) async {
+    final query = select(transactions)
+      ..where((t) =>
+          t.profileId.equals(profileId) &
+          t.occurredAtMs.isBiggerOrEqualValue(startTimeMs) &
+          t.occurredAtMs.isSmallerThanValue(endTimeMs))
+      ..orderBy([(t) => OrderingTerm.desc(t.occurredAtMs)]);
+    return query.get();
+  }
+
   // --- Transfer Groups ---
   Future<int> createTransferGroup(double matchScore) async {
     return into(transferGroups).insert(TransferGroupsCompanion.insert(
@@ -248,6 +272,16 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<InvestmentEvent>> getAllInvestmentEvents() async {
     final query = select(investmentEvents)
+      ..orderBy([(t) => OrderingTerm.desc(t.occurredAtMs)]);
+    return query.get();
+  }
+
+  /// Get investment events for a specific profile
+  Future<List<InvestmentEvent>> getInvestmentEventsForProfile(
+    String profileId,
+  ) async {
+    final query = select(investmentEvents)
+      ..where((t) => t.profileId.equals(profileId))
       ..orderBy([(t) => OrderingTerm.desc(t.occurredAtMs)]);
     return query.get();
   }
@@ -554,9 +588,104 @@ class AppDatabase extends _$AppDatabase {
     await delete(transferGroups).go();
     await delete(investmentEvents).go();
     await delete(positions).go();
+    await delete(stockPrices).go();
+    await delete(portfolioValue).go();
     await delete(changes).go();
     await delete(autoTagRules).go();
     await delete(accounts).go();
+  }
+
+  // --- Stock Prices ---
+  Future<void> insertStockPrice({
+    required String symbol,
+    required int priceDate,
+    required double closePrice,
+    double? highPrice,
+    double? lowPrice,
+    double? openPrice,
+    int? volume,
+  }) async {
+    await into(stockPrices).insert(
+      StockPricesCompanion.insert(
+        symbol: symbol,
+        priceDate: priceDate,
+        closePrice: closePrice,
+        highPrice: highPrice != null ? Value(highPrice) : const Value.absent(),
+        lowPrice: lowPrice != null ? Value(lowPrice) : const Value.absent(),
+        openPrice: openPrice != null ? Value(openPrice) : const Value.absent(),
+        volume: volume != null ? Value(volume) : const Value.absent(),
+        fetchedAtMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+      mode: InsertMode.insertOrReplace,
+    );
+  }
+
+  Future<StockPrice?> getLatestStockPrice(String symbol) async {
+    final result = await (select(stockPrices)
+          ..where((t) => t.symbol.equals(symbol))
+          ..orderBy([(t) => OrderingTerm(expression: t.priceDate, mode: OrderingMode.desc)])
+          ..limit(1))
+        .getSingleOrNull();
+    return result;
+  }
+
+  Future<List<StockPrice>> getStockPriceHistory(String symbol, int days) async {
+    final cutoffDate = _subtractDays(DateTime.now(), days);
+    final cutoffYyyymmdd = int.parse(
+      '${cutoffDate.year}${cutoffDate.month.toString().padLeft(2, '0')}${cutoffDate.day.toString().padLeft(2, '0')}',
+    );
+
+    return (select(stockPrices)
+          ..where((t) => t.symbol.equals(symbol) & t.priceDate.isBiggerOrEqualValue(cutoffYyyymmdd))
+          ..orderBy([(t) => OrderingTerm(expression: t.priceDate, mode: OrderingMode.asc)]))
+        .get();
+  }
+
+  // --- Portfolio Value ---
+  Future<void> insertPortfolioValue({
+    required String profileId,
+    required int valueDate,
+    required double totalValue,
+    double? dayChangeAmount,
+    double? dayChangePercent,
+  }) async {
+    await into(portfolioValue).insert(
+      PortfolioValueCompanion.insert(
+        profileId: profileId,
+        valueDate: valueDate,
+        totalValue: totalValue,
+        dayChangeAmount: dayChangeAmount != null ? Value(dayChangeAmount) : const Value.absent(),
+        dayChangePercent: dayChangePercent != null ? Value(dayChangePercent) : const Value.absent(),
+        calculatedAtMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+      mode: InsertMode.insertOrReplace,
+    );
+  }
+
+  Future<List<PortfolioValueData>> getPortfolioValueHistory(String profileId, int days) async {
+    final cutoffDate = _subtractDays(DateTime.now(), days);
+    final cutoffYyyymmdd = int.parse(
+      '${cutoffDate.year}${cutoffDate.month.toString().padLeft(2, '0')}${cutoffDate.day.toString().padLeft(2, '0')}',
+    );
+
+    return (select(portfolioValue)
+          ..where((t) => t.profileId.equals(profileId) & t.valueDate.isBiggerOrEqualValue(cutoffYyyymmdd))
+          ..orderBy([(t) => OrderingTerm(expression: t.valueDate, mode: OrderingMode.asc)]))
+        .get();
+  }
+
+  Future<PortfolioValueData?> getLatestPortfolioValue(String profileId) async {
+    final result = await (select(portfolioValue)
+          ..where((t) => t.profileId.equals(profileId))
+          ..orderBy([(t) => OrderingTerm(expression: t.valueDate, mode: OrderingMode.desc)])
+          ..limit(1))
+        .getSingleOrNull();
+    return result;
+  }
+
+  /// Helper method to subtract days from a date
+  DateTime _subtractDays(DateTime date, int days) {
+    return date.subtract(Duration(days: days));
   }
 
   // --- Auto-tag rules ---
