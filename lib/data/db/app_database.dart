@@ -21,6 +21,7 @@ part 'app_database.g.dart';
   PortfolioValue,
   Changes,
   AutoTagRules,
+  StockInfo,
 ],)
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
@@ -28,7 +29,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration {
@@ -46,6 +47,10 @@ class AppDatabase extends _$AppDatabase {
           await migrator.create(stockPrices);
           // Create PortfolioValue table
           await migrator.create(portfolioValue);
+        }
+        if (from < 5) {
+          // Create StockInfo table for cached company info (logo, suffix)
+          await migrator.create(stockInfo);
         }
       },
     );
@@ -599,6 +604,7 @@ class AppDatabase extends _$AppDatabase {
     await delete(positions).go();
     await delete(stockPrices).go();
     await delete(portfolioValue).go();
+    await delete(stockInfo).go();
     await delete(changes).go();
     await delete(autoTagRules).go();
     await delete(accounts).go();
@@ -695,6 +701,73 @@ class AppDatabase extends _$AppDatabase {
   /// Helper method to subtract days from a date
   DateTime _subtractDays(DateTime date, int days) {
     return date.subtract(Duration(days: days));
+  }
+
+  // --- Stock Info (company name, logo, symbol suffix) ---
+  Future<void> upsertStockInfo({
+    required String symbol,
+    String? companyName,
+    String? logoPath,
+    String? symbolSuffix,
+  }) async {
+    await into(stockInfo).insert(
+      StockInfoCompanion.insert(
+        symbol: symbol,
+        companyName: companyName != null ? Value(companyName) : const Value.absent(),
+        logoPath: logoPath != null ? Value(logoPath) : const Value.absent(),
+        symbolSuffix: symbolSuffix != null ? Value(symbolSuffix) : const Value.absent(),
+        updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+      mode: InsertMode.insertOrReplace,
+    );
+  }
+
+  Future<StockInfoData?> getStockInfo(String symbol) async {
+    return (select(stockInfo)..where((t) => t.symbol.equals(symbol))).getSingleOrNull();
+  }
+
+  /// Delete [StockPrice] rows whose [priceDate] is older than [keepDays]
+  /// calendar days from today. Called after each daily refresh to keep
+  /// the database lean (default window: 90 days).
+  Future<void> pruneOldStockPrices(int keepDays) async {
+    final cutoff = _subtractDays(DateTime.now(), keepDays);
+    final cutoffYyyymmdd = int.parse(
+      '${cutoff.year}${cutoff.month.toString().padLeft(2, '0')}${cutoff.day.toString().padLeft(2, '0')}',
+    );
+    await (delete(stockPrices)
+          ..where((t) => t.priceDate.isSmallerThanValue(cutoffYyyymmdd)))
+        .go();
+  }
+
+  /// Bulk-upsert stock price rows inside a single transaction for performance.
+  /// Each row map must contain: symbol, priceDate, closePrice.
+  /// Optional: openPrice, highPrice, lowPrice, volume (all nullable).
+  Future<void> batchInsertStockPrices(
+    List<Map<String, dynamic>> rows,
+  ) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await batch((b) {
+      for (final row in rows) {
+        final hp = row['highPrice'] as double?;
+        final lp = row['lowPrice'] as double?;
+        final op = row['openPrice'] as double?;
+        final vol = row['volume'] as int?;
+        b.insert(
+          stockPrices,
+          StockPricesCompanion.insert(
+            symbol: row['symbol'] as String,
+            priceDate: row['priceDate'] as int,
+            closePrice: row['closePrice'] as double,
+            highPrice: hp != null ? Value(hp) : const Value.absent(),
+            lowPrice: lp != null ? Value(lp) : const Value.absent(),
+            openPrice: op != null ? Value(op) : const Value.absent(),
+            volume: vol != null ? Value(vol) : const Value.absent(),
+            fetchedAtMs: now,
+          ),
+          mode: InsertMode.insertOrReplace,
+        );
+      }
+    });
   }
 
   // --- Auto-tag rules ---

@@ -131,12 +131,19 @@ class PortfolioCalculatorService {
         return;
       }
 
-      // Store prices in database
+      // Store prices and company info in database
       for (final price in prices) {
         await db.insertStockPrice(
           symbol: price.symbol,
           priceDate: price.priceDate,
           closePrice: price.closePrice,
+        );
+        // Cache logo path, company name and suffix for UI display
+        await db.upsertStockInfo(
+          symbol: price.symbol,
+          companyName: price.companyName,
+          logoPath: price.logoPath,
+          symbolSuffix: price.symbolSuffix,
         );
       }
 

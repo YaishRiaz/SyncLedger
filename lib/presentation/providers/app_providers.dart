@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sync_ledger/core/constants.dart';
 import 'package:sync_ledger/data/db/app_database.dart';
 import 'package:sync_ledger/domain/parsers/parser_registry.dart';
+import 'package:sync_ledger/domain/services/stock_history_service.dart';
 import 'package:uuid/uuid.dart';
 
 final sharedPrefsProvider = Provider<SharedPreferences>((ref) {
@@ -18,6 +19,11 @@ final databaseProvider = Provider<AppDatabase>((ref) {
 
 final parserRegistryProvider = Provider<ParserRegistry>((ref) {
   return ParserRegistry();
+});
+
+final stockHistoryServiceProvider = Provider<StockHistoryService>((ref) {
+  final db = ref.watch(databaseProvider);
+  return StockHistoryService(db: db);
 });
 
 final hasOnboardedProvider = FutureProvider<bool>((ref) async {

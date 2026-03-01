@@ -37,16 +37,35 @@ class _StocksScreenState extends ConsumerState<StocksScreen>
   Future<void> _refreshPortfolio() async {
     setState(() => _isRefreshing = true);
     try {
-      // Fetch latest prices from CSE, store them, then recalculate portfolio
+      final historyService = ref.read(stockHistoryServiceProvider);
+
+      // 1. One-time CSV seed import (no-op on subsequent calls).
+      await historyService.importSeedIfNeeded();
+
+      // 2. Fetch today's price for all held symbols and recalculate portfolio.
       final calculator = ref.read(portfolioCalculatorProvider);
       final activeId = await ref.read(activeProfileIdProvider.future);
       await calculator.updatePricesAndRecalculatePortfolio([activeId]);
 
-      // Invalidate related providers to refresh UI
+      // 3. Fetch full 90-day history from the CSE chart API for each holding.
+      final holdings = await ref.read(holdingsProvider.future);
+      final db = ref.read(databaseProvider);
+      for (final h in holdings) {
+        final info = await db.getStockInfo(h.symbol);
+        await historyService.fetchAndStoreHistory(h.symbol, info?.symbolSuffix);
+      }
+
+      // 4. Prune data older than 90 days.
+      await historyService.pruneOldPrices();
+
+      // 5. Invalidate providers to refresh the UI.
       ref.invalidate(portfolioValueHistoryProvider);
       ref.invalidate(totalPortfolioValueProvider);
       ref.invalidate(latestPortfolioValueProvider);
       ref.invalidate(holdingsProvider);
+      ref.invalidate(stockInfoProvider);
+      ref.invalidate(stockDetailsProvider);
+      ref.invalidate(stockPredictionProvider);
     } finally {
       setState(() => _isRefreshing = false);
     }
@@ -110,21 +129,39 @@ class _StocksScreenState extends ConsumerState<StocksScreen>
                   itemCount: list.length,
                   itemBuilder: (_, i) {
                     final h = list[i];
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: theme.colorScheme.primaryContainer,
-                        child: Text(
-                          h.symbol.length >= 3
-                              ? h.symbol.substring(0, 3)
-                              : h.symbol,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
+                    final stockInfoAsync = ref.watch(stockInfoProvider(h.symbol));
+                    final logoPath = stockInfoAsync.valueOrNull?.logoPath;
+                    final suffix = stockInfoAsync.valueOrNull?.symbolSuffix;
+                    final displayTicker = suffix != null
+                        ? '${h.symbol}.$suffix'
+                        : h.symbol;
+                    final initials = h.symbol.length >= 3
+                        ? h.symbol.substring(0, 3)
+                        : h.symbol;
+                    final fallbackAvatar = CircleAvatar(
+                      backgroundColor: theme.colorScheme.primaryContainer,
+                      child: Text(
+                        initials,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
+                    );
+                    return ListTile(
+                      leading: logoPath != null
+                          ? ClipOval(
+                              child: Image.network(
+                                'https://www.cse.lk/$logoPath',
+                                width: 40,
+                                height: 40,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => fallbackAvatar,
+                              ),
+                            )
+                          : fallbackAvatar,
                       title: Text(
-                        h.symbol,
+                        displayTicker,
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                       subtitle: Text('${h.qty} shares'),

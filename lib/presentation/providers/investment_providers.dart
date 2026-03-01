@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sync_ledger/data/db/app_database.dart';
+import 'package:sync_ledger/domain/models/price_prediction.dart';
 import 'package:sync_ledger/domain/services/portfolio_calculator_service.dart';
 import 'package:sync_ledger/domain/services/cse_scraper_service.dart';
 import 'package:sync_ledger/presentation/providers/app_providers.dart';
@@ -49,12 +50,21 @@ final cseScraperServiceProvider = Provider<CseScraperService>((ref) {
 });
 
 /// Stock details for a specific stock symbol
-/// Shows price history, current value, gain/loss, etc.
+/// Shows price history (90 days), current value, gain/loss, etc.
 final stockDetailsProvider =
     FutureProvider.family<StockDetails?, String>((ref, symbol) async {
   final calculator = ref.watch(portfolioCalculatorProvider);
   final activeId = await ref.watch(activeProfileIdProvider.future);
-  return calculator.getStockDetails(activeId, symbol, 30);
+  return calculator.getStockDetails(activeId, symbol, 90);
+});
+
+/// 30-trading-day price forecast computed via linear regression on the
+/// last 60 days of actual closing prices stored in [StockPrices].
+final stockPredictionProvider =
+    FutureProvider.family<List<PricePrediction>, String>((ref, symbol) async {
+  final db = ref.watch(databaseProvider);
+  final history = await db.getStockPriceHistory(symbol, 90);
+  return PricePredictor.predict(history);
 });
 
 /// Latest portfolio value for the active profile
@@ -62,6 +72,13 @@ final latestPortfolioValueProvider = FutureProvider<PortfolioValueData?>((ref) a
   final db = ref.watch(databaseProvider);
   final activeId = await ref.watch(activeProfileIdProvider.future);
   return db.getLatestPortfolioValue(activeId);
+});
+
+/// Cached company info (logo, suffix) for a given stock symbol
+final stockInfoProvider =
+    FutureProvider.family<StockInfoData?, String>((ref, symbol) async {
+  final db = ref.watch(databaseProvider);
+  return db.getStockInfo(symbol);
 });
 
 /// Total current portfolio value calculated from all holdings

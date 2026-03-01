@@ -9,6 +9,8 @@ class StockPriceData {
   final double? change;
   final double? changePercent;
   final String? companyName;
+  final String? logoPath;     // e.g., "upload_logo/378_1601611239.jpeg"
+  final String? symbolSuffix; // e.g., "N", "X", "Y"
 
   StockPriceData({
     required this.symbol,
@@ -17,144 +19,198 @@ class StockPriceData {
     this.change,
     this.changePercent,
     this.companyName,
+    this.logoPath,
+    this.symbolSuffix,
   });
 }
 
 /// Service to fetch stock prices from CSE (Colombo Stock Exchange) API
 ///
-/// Uses the official CSE API: https://www.cse.lk/api/companyInfoSummery
+/// Uses: https://www.cse.lk/api/companyInfoSummery
+///       https://www.cse.lk/api/todaySharePrice  (for symbol discovery)
 ///
 /// Trading hours: Mon-Fri, 10:30am-2:30pm Colombo time
 /// Fetch prices after 2:30pm (3pm recommended) for EOD data
 ///
-/// Symbol format: TICKER.N0000 (e.g., HHL.N0000, LOLC.N0000)
-/// - .N0000: Ordinary shares
-/// - .X0000 or .Y0000: Preferential shares
+/// Symbol format: TICKER.N0000 (ordinary) | .X0000 / .Y0000 (preference)
 class CseScraperService {
   static const String CSE_API_BASE = 'https://www.cse.lk/api';
   static const String CSE_API_ENDPOINT = 'companyInfoSummery';
-  static const Duration TIMEOUT = Duration(seconds: 10);
+  static const Duration TIMEOUT = Duration(seconds: 15);
 
-  // CSE symbol suffix for ordinary shares
+  // Fallback suffix when the symbol isn't found in todaySharePrice
   static const String SYMBOL_SUFFIX = '.N0000';
 
-  /// Fetch stock prices from CSE API for given symbols
+  // ---------------------------------------------------------------------------
+  // Public API
+  // ---------------------------------------------------------------------------
+
+  /// Fetch stock prices for the given bare symbols (e.g., ['HHL', 'LOLC']).
   ///
-  /// [symbols] List of stock symbols without suffix (e.g., ['HHL', 'LOLC'])
-  /// Returns list of StockPriceData or empty list if fetch fails
-  ///
-  /// Example:
-  /// ```
-  /// final prices = await service.fetchStockPrices(['HHL', 'LOLC']);
-  /// ```
+  /// First queries `todaySharePrice` to get the correct full symbol for each
+  /// ticker (e.g., HHL → HHL.N0000, TKYO → TKYO.X0000). Falls back to
+  /// [SYMBOL_SUFFIX] when a symbol is not found in the live list.
   Future<List<StockPriceData>> fetchStockPrices(List<String> symbols) async {
-    if (symbols.isEmpty) {
-      return [];
-    }
+    if (symbols.isEmpty) return [];
+
+    // Resolve bare tickers → full CSE symbols (e.g., "HHL" → "HHL.N0000")
+    final symbolMap = await _fetchSymbolMap();
 
     final prices = <StockPriceData>[];
-
     for (final symbol in symbols) {
       try {
-        final data = await _fetchSingleStockPrice(symbol);
-        if (data != null) {
-          prices.add(data);
-        }
+        final fullSymbol = symbolMap[symbol] ?? '$symbol$SYMBOL_SUFFIX';
+        final data = await _fetchSingleStockPrice(symbol, fullSymbol);
+        if (data != null) prices.add(data);
       } catch (e) {
         AppLogger.w('CseScraperService: Failed to fetch $symbol: $e');
-        // Continue with next symbol
       }
     }
-
     return prices;
   }
 
-  /// Fetch price for a single stock from CSE API
-  Future<StockPriceData?> _fetchSingleStockPrice(String symbol) async {
+  // ---------------------------------------------------------------------------
+  // Private helpers
+  // ---------------------------------------------------------------------------
+
+  /// Fetch all listed stocks from `todaySharePrice` and return a map of
+  /// bare ticker → full CSE symbol, e.g. {"HHL" → "HHL.N0000"}.
+  Future<Map<String, String>> _fetchSymbolMap() async {
     try {
-      AppLogger.d('CseScraperService: Fetching price for $symbol');
+      final url = Uri.parse('$CSE_API_BASE/todaySharePrice');
+      final response = await http
+          .post(url, headers: {'Content-Type': 'application/x-www-form-urlencoded'})
+          .timeout(TIMEOUT);
 
-      final cseSymbol = '$symbol$SYMBOL_SUFFIX';
+      if (response.statusCode != 200) {
+        AppLogger.w('CseScraperService: todaySharePrice returned ${response.statusCode}');
+        return {};
+      }
+
+      final data = jsonDecode(response.body);
+      if (data is! List) return {};
+
+      final map = <String, String>{};
+      for (final item in data) {
+        final full = item['symbol'] as String?;
+        if (full != null && full.contains('.')) {
+          final bare = full.split('.').first;
+          map[bare] = full;
+        }
+      }
+
+      AppLogger.d('CseScraperService: Loaded ${map.length} symbols from todaySharePrice');
+      return map;
+    } catch (e) {
+      AppLogger.w('CseScraperService: Failed to fetch symbol map: $e');
+      return {};
+    }
+  }
+
+  /// Fetch price + company info for a single stock from `companyInfoSummery`.
+  ///
+  /// [bareSymbol] — stored ticker (e.g., "HHL")
+  /// [fullSymbol] — the CSE full symbol to POST (e.g., "HHL.N0000")
+  Future<StockPriceData?> _fetchSingleStockPrice(
+    String bareSymbol,
+    String fullSymbol,
+  ) async {
+    try {
+      AppLogger.d('CseScraperService: Fetching $bareSymbol as $fullSymbol');
+
       final url = Uri.parse('$CSE_API_BASE/$CSE_API_ENDPOINT');
-
       final response = await http
           .post(
             url,
-            body: {'symbol': cseSymbol},
+            body: {'symbol': fullSymbol},
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
           )
           .timeout(TIMEOUT);
 
       if (response.statusCode != 200) {
         AppLogger.w(
-          'CseScraperService: API returned status ${response.statusCode} for $symbol',
+          'CseScraperService: HTTP ${response.statusCode} for $bareSymbol ($fullSymbol)',
         );
         return null;
       }
 
-      return _parseApiResponse(symbol, response.body);
+      return _parseApiResponse(bareSymbol, fullSymbol, response.body);
     } catch (e) {
-      AppLogger.e('CseScraperService: Error fetching $symbol: $e');
+      AppLogger.e('CseScraperService: Error fetching $bareSymbol: $e');
       return null;
     }
   }
 
-  /// Parse JSON response from CSE API
-  ///
-  /// Expected response format:
-  /// ```json
-  /// {
-  ///   "reqSymbolInfo": {
-  ///     "name": "Company Name",
-  ///     "lastTradedPrice": 100.50,
-  ///     "change": 2.50,
-  ///     "changePercentage": 2.55,
-  ///     "marketCap": 1000000000
-  ///   }
-  /// }
-  /// ```
-  StockPriceData? _parseApiResponse(String symbol, String jsonBody) {
+  /// Parse the JSON body from `companyInfoSummery`.
+  StockPriceData? _parseApiResponse(
+    String bareSymbol,
+    String fullSymbol,
+    String jsonBody,
+  ) {
     try {
       final json = jsonDecode(jsonBody) as Map<String, dynamic>;
       final reqInfo = json['reqSymbolInfo'] as Map<String, dynamic>?;
 
       if (reqInfo == null) {
-        AppLogger.w('CseScraperService: No reqSymbolInfo in response for $symbol');
+        AppLogger.w('CseScraperService: No reqSymbolInfo for $bareSymbol');
         return null;
       }
 
       final lastPrice = parseDouble(reqInfo['lastTradedPrice']?.toString());
-      if (lastPrice == null) {
-        AppLogger.w('CseScraperService: Could not parse lastTradedPrice for $symbol');
+      if (lastPrice == null || lastPrice == 0) {
+        AppLogger.w(
+          'CseScraperService: No lastTradedPrice for $bareSymbol ($fullSymbol)',
+        );
         return null;
       }
 
       final change = parseDouble(reqInfo['change']?.toString());
       final changePercent = parseDouble(reqInfo['changePercentage']?.toString());
-      final companyName = reqInfo['name'] as String?;
+      final companyName = (reqInfo['name'] as String?)?.trim();
+
+      // Logo path: "upload_logo/378_1601611239.jpeg"
+      final reqLogo = json['reqLogo'] as Map<String, dynamic>?;
+      final rawLogoPath = (reqLogo?['path'] as String?)?.trim();
+      final logoPath = (rawLogoPath?.isNotEmpty == true) ? rawLogoPath : null;
+
+      AppLogger.d(
+        'CseScraperService: $bareSymbol → price=$lastPrice '
+        'logo=${logoPath ?? "none"} company=${companyName ?? "unknown"}',
+      );
+
+      // Extract suffix letter from fullSymbol: "HHL.N0000" → "N", "TKYO.X0000" → "X"
+      String? symbolSuffix;
+      if (fullSymbol.contains('.')) {
+        final suffixPart = fullSymbol.split('.').last;
+        if (suffixPart.isNotEmpty) symbolSuffix = suffixPart[0];
+      }
 
       return StockPriceData(
-        symbol: symbol,
+        symbol: bareSymbol,
         priceDate: dateToYyyymmdd(DateTime.now()),
         closePrice: lastPrice,
         change: change,
         changePercent: changePercent,
         companyName: companyName,
+        logoPath: logoPath,
+        symbolSuffix: symbolSuffix,
       );
     } catch (e) {
-      AppLogger.e('CseScraperService: Error parsing response for $symbol: $e');
+      AppLogger.e('CseScraperService: Error parsing response for $bareSymbol: $e');
       return null;
     }
   }
 
-  /// Helper: Convert date to YYYYMMDD format
+  // ---------------------------------------------------------------------------
+  // Static utilities
+  // ---------------------------------------------------------------------------
+
   static int dateToYyyymmdd(DateTime date) {
     return int.parse(
       '${date.year}${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}',
     );
   }
 
-  /// Helper: Convert YYYYMMDD format to DateTime
   static DateTime yyyymmddToDate(int dateValue) {
     final dateStr = dateValue.toString();
     final year = int.parse(dateStr.substring(0, 4));
@@ -163,18 +219,12 @@ class CseScraperService {
     return DateTime(year, month, day);
   }
 
-  /// Helper: Parse double safely
   static double? parseDouble(String? value) {
     if (value == null || value.isEmpty) return null;
-    // Remove common currency symbols and formatting
-    final cleaned = value
-        .replaceAll(RegExp(r'[^0-9.]'), '')
-        .replaceAll(',', '')
-        .trim();
+    final cleaned = value.replaceAll(RegExp(r'[^0-9.]'), '').trim();
     return double.tryParse(cleaned);
   }
 
-  /// Helper: Parse int safely
   static int? parseInt(String? value) {
     if (value == null || value.isEmpty) return null;
     final cleaned = value.replaceAll(RegExp(r'[^0-9]'), '').trim();

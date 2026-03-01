@@ -129,3 +129,17 @@ class AutoTagRules extends Table {
   TextColumn get merchantKeyword => text()();
   TextColumn get category => text()();
 }
+
+/// Cached company info fetched from CSE API
+/// Stores logo path and symbol suffix per stock ticker
+@DataClassName('StockInfoData')
+class StockInfo extends Table {
+  TextColumn get symbol => text()(); // Stock ticker (e.g., "APLA")
+  TextColumn get companyName => text().nullable()();
+  TextColumn get logoPath => text().nullable()(); // e.g., "upload_logo/378_1601611239.jpeg"
+  TextColumn get symbolSuffix => text().nullable()(); // e.g., "N", "X", "Y"
+  IntColumn get updatedAtMs => integer()();
+
+  @override
+  Set<Column> get primaryKey => {symbol};
+}
